@@ -63,6 +63,12 @@ interface BusinessRow {
   name: string;
 }
 
+interface VatSettings {
+  has_vat: boolean;
+  tax_name: string;
+  tax_percentage: number;
+}
+
 // ── System instructions ───────────────────────────────────────────────────────
 
 const SYSTEM_INSTRUCTION_TEXT = `
@@ -463,6 +469,23 @@ async function runPipeline(
     console.log(`[pipeline] Project "${rawProjectName}" mentioned but workspace is Personal Ledger — skipping (projects require a business workspace)`);
   }
 
+  // ── Step F3: VAT settings lookup ──────────────────────────────────────────
+  // Fetch once here so the confirmation reply can inform the user when their
+  // expense will factor into the dashboard's Input VAT calculation.
+  // Defaults apply when no settings row exists yet (new business).
+  let vatSettings: VatSettings = { has_vat: false, tax_name: "VAT", tax_percentage: 7.5 };
+
+  if (businessId) {
+    const { data: vatRow } = await supabase
+      .from("business_invoice_settings")
+      .select("has_vat, tax_name, tax_percentage")
+      .eq("business_id", businessId)
+      .maybeSingle() as { data: VatSettings | null };
+
+    if (vatRow) vatSettings = vatRow;
+    console.log(`[pipeline] VAT settings for business ${businessId}:`, vatSettings);
+  }
+
   // ── Step G: Database ingestion ────────────────────────────────────────────
   const { error: insertErr } = await supabase.from("transactions").insert({
     user_id: userId,
@@ -506,6 +529,19 @@ async function runPipeline(
     lines.push(`⚠️ Project: Could not link to "${rawProjectName}" — saved as Unassigned`);
   }
   lines.push(`📝 Description: ${parsed.description}`);
+
+  // Inform the user when this outflow will reduce their VAT liability.
+  // cogs and opex are the two tags the get_tax_summary RPC counts as Input VAT.
+  const isInputVatEligible =
+    vatSettings.has_vat &&
+    parsed.transaction_type === "outflow" &&
+    (parsed.financial_tag === "cogs" || parsed.financial_tag === "opex");
+
+  if (isInputVatEligible) {
+    lines.push(
+      `\n🧾 ${vatSettings.tax_name} Deductible: This expense factors into your Input ${vatSettings.tax_name} on the dashboard (${vatSettings.tax_percentage}% of ₦${parsed.amount.toLocaleString("en-NG")}).`,
+    );
+  }
 
   return lines.join("\n");
 }
