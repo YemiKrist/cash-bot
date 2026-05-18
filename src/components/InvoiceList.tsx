@@ -1,6 +1,7 @@
 "use client";
 
 import type { Invoice, InvoiceStatus } from "@/lib/types";
+import { Amt } from "@/components/Amt";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -81,8 +82,8 @@ export default function InvoiceList({ invoices, loading }: Props) {
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-800">
-      <table className="w-full text-sm">
+    <div className="overflow-x-auto rounded-2xl border border-zinc-800">
+      <table className="w-full min-w-[620px] text-sm">
         <thead>
           <tr className="border-b border-zinc-800 bg-zinc-900/80">
             {["Invoice #", "Client", "Project", "Due Date", "Total", "Status"].map(
@@ -115,7 +116,7 @@ export default function InvoiceList({ invoices, loading }: Props) {
                   {inv.client_name}
                 </td>
                 <td className="max-w-[160px] truncate px-5 py-4 text-zinc-400">
-                  {inv.project_name ?? (
+                  {inv.project?.name ?? (
                     <span className="italic text-zinc-600">—</span>
                   )}
                 </td>
@@ -131,8 +132,8 @@ export default function InvoiceList({ invoices, loading }: Props) {
                     </span>
                   )}
                 </td>
-                <td className="whitespace-nowrap px-5 py-4 text-right font-mono font-semibold text-zinc-200">
-                  {formatCurrency(inv.total_amount)}
+                <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-zinc-200">
+                  <Amt value={formatCurrency(inv.total_amount)} />
                 </td>
                 <td className="px-5 py-4 text-right">
                   <span

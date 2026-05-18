@@ -24,13 +24,31 @@ export default function InvoiceModal({ onClose, onSaved }: Props) {
 
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [clientName, setClientName] = useState("");
-  const [projectName, setProjectName] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState(defaultDueDate);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  // Fetch projects whenever the active business changes
+  useEffect(() => {
+    if (!activeBusiness) { setProjects([]); setProjectId(""); return; }
+    setProjectsLoading(true);
+    supabase
+      .from("projects")
+      .select("id, name")
+      .eq("business_id", activeBusiness.id)
+      .order("name")
+      .then(({ data }) => {
+        setProjects((data as { id: string; name: string }[]) ?? []);
+        setProjectsLoading(false);
+      });
+  }, [activeBusiness]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -61,7 +79,7 @@ export default function InvoiceModal({ onClose, onSaved }: Props) {
       business_id: activeBusiness.id,
       invoice_number: invoiceNumber.trim(),
       client_name: clientName.trim(),
-      project_name: projectName.trim() || null,
+      project_id: projectId || null,
       total_amount: parsed,
       due_date: dueDate,
       status: "unpaid",
@@ -73,7 +91,7 @@ export default function InvoiceModal({ onClose, onSaved }: Props) {
       setError(
         dbError.code === "23505"
           ? `Invoice number "${invoiceNumber}" already exists for this business.`
-          : dbError.message
+          : dbError.message,
       );
       return;
     }
@@ -160,16 +178,40 @@ export default function InvoiceModal({ onClose, onSaved }: Props) {
             />
           </div>
 
+          {/* Project dropdown */}
           <div>
             <label className="mb-1.5 block text-xs font-medium text-zinc-400">
-              Project Name <span className="text-zinc-600">(optional)</span>
+              Project <span className="text-zinc-600">(optional)</span>
             </label>
-            <input
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              placeholder="Brand Identity Redesign"
-              className={field}
-            />
+            <div className="relative">
+              <select
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                disabled={projectsLoading}
+                className="w-full appearance-none rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-2.5 pr-9 text-sm text-white outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 transition"
+              >
+                <option value="">— No project —</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <svg
+                className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </div>
+            {!projectsLoading && projects.length === 0 && activeBusiness && (
+              <p className="mt-1.5 text-[11px] text-zinc-600">
+                No projects yet — add one from the sidebar to link it here.
+              </p>
+            )}
           </div>
 
           <div>

@@ -52,6 +52,7 @@ interface ParsedTransaction {
   financial_tag: FinancialTag;
   description: string;
   entity_prefix_guess: string | null;
+  project_name: string | null;
   is_corporate_ambiguous: boolean;
   is_valid_transaction: boolean;
 }
@@ -76,6 +77,11 @@ exactly these fields:
   financial_tag          string         One of: "revenue" | "cogs" | "opex" | "personal_essential" | "personal_luxury"
   description            string         One clean sentence summarising the transaction
   entity_prefix_guess    string|null    The exact business name mentioned, or null if none stated
+  project_name           string|null    The exact project, client engagement, or deliverable name
+                                        mentioned in the message (e.g. "Brand Identity Redesign",
+                                        "Lekki Office Build-out", "Q3 Ad Campaign"). Return null
+                                        if no specific project is mentioned. Do NOT guess or infer
+                                        a project name — only extract one if the user states it.
   is_corporate_ambiguous boolean        Set to true when EITHER of these conditions applies:
                                         (A) The expense is unambiguously corporate: server hosting, software
                                             licenses, ad spend, client invoicing, B2B services, domain renewals,
@@ -129,6 +135,9 @@ details and return a JSON object with exactly these fields:
   financial_tag          string         One of: "revenue" | "cogs" | "opex" | "personal_essential" | "personal_luxury"
   description            string         "{vendor_name} — {top line items summary}"
   entity_prefix_guess    string|null    Purchasing business name if visible on the receipt, else null
+  project_name           string|null    Project or engagement name if printed on the receipt or
+                                        invoice (e.g. in the line-item description, PO number field,
+                                        or memo). Return null if not present.
   is_corporate_ambiguous boolean        Set to true when EITHER of these conditions applies:
                                         (A) The receipt is unambiguously corporate: SaaS invoice, cloud
                                             services, office supplies, professional services, equipment
@@ -380,10 +389,85 @@ async function runPipeline(
     console.log("[pipeline] No entity hint — routing to Personal Ledger");
   }
 
+  // ── Step F2: Project resolution ───────────────────────────────────────────
+  // Projects are scoped to a business. When businessId is null (Personal
+  // Ledger) we skip silently — the schema requires a non-null business_id
+  // on the projects table.
+  let projectId: string | null = null;
+  let resolvedProjectName: string | null = null;
+  let projectLinkFailed = false;   // set when DB write succeeded but project could not be linked
+
+  const rawProjectName = parsed.project_name?.trim() ?? null;
+
+  if (businessId && rawProjectName && rawProjectName.length > 0) {
+    // ── 1. Case-insensitive lookup for an existing project ─────────────────
+    const { data: existingProj } = await supabase
+      .from("projects")
+      .select("id, name")
+      .eq("business_id", businessId)
+      .filter("name", "ilike", rawProjectName)
+      .maybeSingle() as { data: { id: string; name: string } | null };
+
+    if (existingProj) {
+      projectId = existingProj.id;
+      resolvedProjectName = existingProj.name;
+      console.log(`[pipeline] Project matched → "${existingProj.name}" (${existingProj.id})`);
+    } else {
+      // ── 2. No match — auto-create the project for this business ───────────
+      console.log(`[pipeline] Project "${rawProjectName}" not found — creating`);
+
+      const { data: newProj, error: projCreateErr } = await supabase
+        .from("projects")
+        .insert({ business_id: businessId, name: rawProjectName })
+        .select("id, name")
+        .single() as { data: { id: string; name: string } | null; error: { code: string; message: string } | null };
+
+      if (projCreateErr) {
+        if (projCreateErr.code === "23505") {
+          // Race condition: a concurrent request already created this project.
+          // Retry the lookup with the exact name that caused the conflict.
+          console.log("[pipeline] Race condition (23505) — fetching existing project");
+          const { data: racedProj } = await supabase
+            .from("projects")
+            .select("id, name")
+            .eq("business_id", businessId)
+            .filter("name", "ilike", rawProjectName)
+            .maybeSingle() as { data: { id: string; name: string } | null };
+
+          if (racedProj) {
+            projectId = racedProj.id;
+            resolvedProjectName = racedProj.name;
+            console.log(`[pipeline] Race resolved → "${racedProj.name}" (${racedProj.id})`);
+          } else {
+            // Extremely unlikely: conflict but still can't find it — non-fatal.
+            console.error("[pipeline] Race-condition recovery failed — saving without project");
+            projectLinkFailed = true;
+          }
+        } else {
+          // Any other DB error — non-fatal, transaction still saves, but we
+          // surface it clearly in the confirmation reply so the user knows.
+          console.error("[pipeline] Project create failed:", projCreateErr.message);
+          projectLinkFailed = true;
+        }
+      } else if (newProj) {
+        projectId = newProj.id;
+        resolvedProjectName = newProj.name;
+        console.log(`[pipeline] New project created → "${newProj.name}" (${newProj.id})`);
+      } else {
+        // insert returned no data and no error — shouldn't happen but guard it.
+        console.error("[pipeline] Project insert returned neither data nor error");
+        projectLinkFailed = true;
+      }
+    }
+  } else if (!businessId && rawProjectName && rawProjectName.length > 0) {
+    console.log(`[pipeline] Project "${rawProjectName}" mentioned but workspace is Personal Ledger — skipping (projects require a business workspace)`);
+  }
+
   // ── Step G: Database ingestion ────────────────────────────────────────────
   const { error: insertErr } = await supabase.from("transactions").insert({
     user_id: userId,
     business_id: businessId,
+    project_id: projectId,
     phone_number: from,
     amount: parsed.amount,
     transaction_type: parsed.transaction_type,
@@ -396,7 +480,7 @@ async function runPipeline(
 
   if (insertErr) throw new Error(`DB insert failed: ${insertErr.message}`);
 
-  console.log("[pipeline] Transaction saved ✓");
+  console.log("[pipeline] Transaction saved ✓", { projectId });
 
   const workspaceName = businessId
     ? (businesses?.find((b) => b.id === businessId)?.name ?? "Business")
@@ -408,14 +492,22 @@ async function runPipeline(
     minimumFractionDigits: 2,
   }).format(parsed.amount);
 
-  return [
+  const lines = [
     "✅ Transaction Logged!",
     "",
     `💰 Amount: ${formattedAmount}`,
     `🏷️ Tag: ${parsed.financial_tag}`,
     `📁 Workspace: ${workspaceName}`,
-    `📝 Description: ${parsed.description}`,
-  ].join("\n");
+  ];
+
+  if (resolvedProjectName) {
+    lines.push(`📂 Project: ${resolvedProjectName}`);
+  } else if (projectLinkFailed && rawProjectName) {
+    lines.push(`⚠️ Project: Could not link to "${rawProjectName}" — saved as Unassigned`);
+  }
+  lines.push(`📝 Description: ${parsed.description}`);
+
+  return lines.join("\n");
 }
 
 // ── HTTP handler ──────────────────────────────────────────────────────────────

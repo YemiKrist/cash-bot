@@ -78,14 +78,36 @@ CREATE POLICY "Users can manage their own fixed rules"
   WITH CHECK (auth.uid() = user_id);
 
 -- =============================================================================
+-- public.projects
+-- =============================================================================
+CREATE TABLE public.projects (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id UUID        NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+  name        TEXT        NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  UNIQUE (business_id, name)
+);
+
+CREATE INDEX ON public.projects (business_id);
+
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage their own projects"
+  ON public.projects
+  FOR ALL
+  USING      (auth.uid() = (SELECT user_id FROM public.businesses WHERE id = business_id))
+  WITH CHECK (auth.uid() = (SELECT user_id FROM public.businesses WHERE id = business_id));
+
+-- =============================================================================
 -- public.invoices
 -- =============================================================================
 CREATE TABLE public.invoices (
-  id             UUID    PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id             UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
   business_id    UUID    NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+  project_id     UUID    REFERENCES public.projects(id) ON DELETE SET NULL,
   invoice_number TEXT    NOT NULL,
   client_name    TEXT    NOT NULL,
-  project_name   TEXT,
   total_amount   NUMERIC NOT NULL,
   due_date       DATE,
   status         TEXT    NOT NULL DEFAULT 'unpaid'
@@ -110,6 +132,7 @@ CREATE TABLE public.transactions (
   user_id           UUID        NOT NULL,
   business_id       UUID        REFERENCES public.businesses(id) ON DELETE SET NULL,
   invoice_id        UUID        REFERENCES public.invoices(id)   ON DELETE SET NULL,
+  project_id        UUID        REFERENCES public.projects(id)   ON DELETE SET NULL,
   phone_number      TEXT,
   amount            NUMERIC     NOT NULL,
   transaction_type  TEXT        NOT NULL

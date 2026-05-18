@@ -2,8 +2,13 @@
 
 import { useMemo } from "react";
 import { useWorkspace } from "@/providers/WorkspaceProvider";
-import { useAnalytics } from "@/hooks/useAnalytics";
-import type { WeeklySummaryRow } from "@/lib/types";
+import {
+  useAnalytics,
+  useProjectAnalytics,
+  useProjects,
+} from "@/hooks/useAnalytics";
+import { Amt } from "@/components/Amt";
+import type { WeeklySummaryRow, ProjectSummaryRow } from "@/lib/types";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -28,7 +33,58 @@ function pctChange(current: number, prior: number): number | null {
   return ((current - prior) / Math.abs(prior)) * 100;
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Project filter dropdown ───────────────────────────────────────────────────
+
+interface ProjectFilterProps {
+  selectedId: string | null;
+  onChange: (id: string | null) => void;
+  options: { id: string; name: string }[];
+  loading: boolean;
+}
+
+function ProjectFilter({ selectedId, onChange, options, loading }: ProjectFilterProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <svg
+        className="h-3.5 w-3.5 shrink-0 text-zinc-500"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path d="M2 7a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2Z" />
+      </svg>
+      <select
+        value={selectedId ?? "all"}
+        onChange={(e) => onChange(e.target.value === "all" ? null : e.target.value)}
+        disabled={loading}
+        className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-300 outline-none transition hover:border-zinc-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50"
+      >
+        <option value="all">All Projects</option>
+        {options.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      {selectedId && (
+        <button
+          onClick={() => onChange(null)}
+          className="flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-white transition"
+          aria-label="Clear project filter"
+        >
+          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Summary card ──────────────────────────────────────────────────────────────
 
 interface SummaryCardProps {
   label: string;
@@ -40,42 +96,28 @@ interface SummaryCardProps {
 
 function SummaryCard({ label, value, change, positive, sub }: SummaryCardProps) {
   const valueColor =
-    positive === true
-      ? "text-emerald-400"
-      : positive === false
-      ? "text-red-400"
-      : "text-white";
-
-  const glow =
-    positive === true
-      ? "shadow-[0_0_18px_-4px_rgba(52,211,153,0.25)]"
-      : positive === false
-      ? "shadow-[0_0_18px_-4px_rgba(248,113,113,0.2)]"
-      : "";
+    positive === true ? "text-emerald-400" : positive === false ? "text-red-400" : "text-white";
 
   const changeColor =
-    change === null || change === undefined
-      ? "text-zinc-600"
-      : change >= 0
-      ? "text-emerald-500"
-      : "text-red-500";
-
-  const changePrefix = change !== null && change !== undefined && change > 0 ? "+" : "";
+    change == null ? "text-zinc-600" : change >= 0 ? "text-emerald-500" : "text-red-500";
 
   return (
-    <div
-      className={`flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900 p-6 ${glow}`}
-    >
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
-        {label}
+    <div className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{label}</p>
+      <p className={`mt-3 text-2xl font-bold leading-none ${valueColor}`}>
+        {value.startsWith("₦") ? (
+          <>
+            <span className="font-sans">₦</span>
+            <span className="font-mono">{value.slice(1)}</span>
+          </>
+        ) : (
+          <span className="font-mono">{value}</span>
+        )}
       </p>
-      <p className={`mt-3 font-mono text-2xl font-bold leading-none ${valueColor}`}>
-        {value}
-      </p>
-      <div className="mt-2 flex items-center gap-2">
-        {change !== null && change !== undefined ? (
+      <div className="mt-2">
+        {change != null ? (
           <span className={`text-xs font-semibold ${changeColor}`}>
-            {changePrefix}
+            {change > 0 ? "+" : ""}
             {change.toFixed(1)}% vs prior week
           </span>
         ) : sub ? (
@@ -88,70 +130,108 @@ function SummaryCard({ label, value, change, positive, sub }: SummaryCardProps) 
 
 // ── CSV export ────────────────────────────────────────────────────────────────
 
-function downloadCSV(rows: WeeklySummaryRow[], workspaceName: string) {
-  const header = ["Week Start", "Inflow (NGN)", "Outflow (NGN)", "Net Balance (NGN)"];
-  const lines = rows.map((r) =>
-    [
-      r.week_start,
-      r.total_inflow.toFixed(2),
-      r.total_outflow.toFixed(2),
-      r.net_balance.toFixed(2),
-    ].join(",")
+function downloadCSV(
+  rows: WeeklySummaryRow[],
+  projects: ProjectSummaryRow[],
+  workspaceName: string,
+  activeProjectName: string | null,
+) {
+  const sections: string[] = [];
+
+  const scope = activeProjectName ? ` — ${activeProjectName}` : "";
+  sections.push(`WEEKLY PERFORMANCE${scope}`);
+  sections.push(["Week Start", "Inflow (NGN)", "Outflow (NGN)", "Net Balance (NGN)"].join(","));
+  rows.forEach((r) =>
+    sections.push(
+      [r.week_start, r.total_inflow.toFixed(2), r.total_outflow.toFixed(2), r.net_balance.toFixed(2)].join(","),
+    ),
   );
 
-  const csv = [header.join(","), ...lines].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
+  if (!activeProjectName && projects.length > 0) {
+    sections.push("");
+    sections.push("PROJECT BREAKDOWN");
+    sections.push(
+      ["Project", "Inflow (NGN)", "Outflow (NGN)", "Net Balance (NGN)", "Invoices", "Transactions"].join(","),
+    );
+    projects.forEach((p) =>
+      sections.push(
+        [
+          `"${p.project_name}"`,
+          p.total_inflow.toFixed(2),
+          p.total_outflow.toFixed(2),
+          p.net_balance.toFixed(2),
+          p.invoice_count,
+          p.tx_count,
+        ].join(","),
+      ),
+    );
+  }
 
+  const blob = new Blob([sections.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `cashbot_${workspaceName.replace(/\s+/g, "_")}_weekly_summary.csv`;
+  a.download = `cashbot_${workspaceName.replace(/\s+/g, "_")}${activeProjectName ? `_${activeProjectName.replace(/\s+/g, "_")}` : ""}_analytics.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-// ── PDF / Print export ────────────────────────────────────────────────────────
+// ── PDF export ────────────────────────────────────────────────────────────────
 
 function exportPDF(
   rows: WeeklySummaryRow[],
+  projectRows: ProjectSummaryRow[],
   workspaceName: string,
+  activeProjectName: string | null,
   totals: { inflow: number; outflow: number; net: number; margin: string },
   categories: { label: string; amount: number; pct: string }[],
 ) {
   const generatedAt = new Date().toLocaleString("en-NG", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
+    day: "2-digit", month: "long", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: true,
   });
-
   const periodStart = rows.length ? fmtDate(rows[rows.length - 1].week_start) : "—";
-  const periodEnd = rows.length ? fmtDate(rows[0].week_start) : "—";
+  const periodEnd   = rows.length ? fmtDate(rows[0].week_start) : "—";
 
-  const weekRows = rows
-    .map(
-      (r) => `
-      <tr>
-        <td>${fmtDate(r.week_start)}</td>
-        <td class="num green">₦${r.total_inflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
-        <td class="num red">₦${r.total_outflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
-        <td class="num ${r.net_balance >= 0 ? "green" : "red"}">₦${r.net_balance.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
-      </tr>`
-    )
-    .join("");
+  const weekRows = rows.map((r) => `
+    <tr>
+      <td>${fmtDate(r.week_start)}</td>
+      <td class="num green">₦${r.total_inflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+      <td class="num red">₦${r.total_outflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+      <td class="num ${r.net_balance >= 0 ? "green" : "red"}">₦${r.net_balance.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+    </tr>`).join("");
 
-  const catRows = categories
-    .map(
-      (c) => `
-      <tr>
-        <td>${c.label}</td>
-        <td class="num">₦${c.amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
-        <td class="num">${c.pct}%</td>
-      </tr>`
-    )
-    .join("");
+  const catRows = categories.map((c) => `
+    <tr>
+      <td>${c.label}</td>
+      <td class="num">₦${c.amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+      <td class="num">${c.pct}%</td>
+    </tr>`).join("");
+
+  const projSection = !activeProjectName && projectRows.length > 0 ? `
+  <div class="section">
+    <div class="section-title">Project Performance</div>
+    <table>
+      <thead><tr>
+        <th>Project</th>
+        <th style="text-align:right">Inflow</th>
+        <th style="text-align:right">Outflow</th>
+        <th style="text-align:right">Net Balance</th>
+        <th style="text-align:right">Invoices</th>
+      </tr></thead>
+      <tbody>${projectRows.map((p) => `
+        <tr>
+          <td>${p.project_name}</td>
+          <td class="num green">₦${p.total_inflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+          <td class="num red">₦${p.total_outflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+          <td class="num ${p.net_balance >= 0 ? "green" : "red"}">₦${p.net_balance.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+          <td class="num">${p.invoice_count}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  </div>` : "";
+
+  const scopeLabel = activeProjectName ? ` &mdash; ${activeProjectName}` : "";
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -163,7 +243,7 @@ function exportPDF(
     body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #111; background: #fff; padding: 40px; font-size: 12px; }
     .header { border-bottom: 3px solid #111; padding-bottom: 20px; margin-bottom: 28px; }
     .header-top { display: flex; justify-content: space-between; align-items: flex-start; }
-    .brand { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; color: #111; }
+    .brand { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; }
     .brand span { color: #10b981; }
     .meta { text-align: right; color: #555; font-size: 11px; line-height: 1.6; }
     .workspace { font-size: 15px; font-weight: 700; margin-top: 12px; }
@@ -184,10 +264,7 @@ function exportPDF(
     td.green { color: #059669; }
     td.red { color: #dc2626; }
     .footer { margin-top: 40px; border-top: 1px solid #e5e7eb; padding-top: 16px; color: #9ca3af; font-size: 10px; display: flex; justify-content: space-between; }
-    @media print {
-      body { padding: 20px; }
-      @page { margin: 15mm; }
-    }
+    @media print { body { padding: 20px; } @page { margin: 15mm; } }
   </style>
 </head>
 <body>
@@ -196,7 +273,7 @@ function exportPDF(
       <div>
         <div class="report-title">Financial Performance Statement</div>
         <div class="brand">Cash<span>Bot</span></div>
-        <div class="workspace">${workspaceName}</div>
+        <div class="workspace">${workspaceName}${scopeLabel}</div>
       </div>
       <div class="meta">
         Generated: ${generatedAt}<br/>
@@ -209,35 +286,25 @@ function exportPDF(
   <div class="section">
     <div class="section-title">Executive Summary</div>
     <div class="summary-grid">
-      <div class="kpi">
-        <div class="kpi-label">Total Inflow</div>
-        <div class="kpi-value green">₦${totals.inflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Total Outflow</div>
-        <div class="kpi-value red">₦${totals.outflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Net Balance</div>
-        <div class="kpi-value ${totals.net >= 0 ? "green" : "red"}">₦${totals.net.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Net Profit Margin</div>
-        <div class="kpi-value ${parseFloat(totals.margin) >= 0 ? "green" : "red"}">${totals.margin}%</div>
-      </div>
+      <div class="kpi"><div class="kpi-label">Total Inflow</div>
+        <div class="kpi-value green">₦${totals.inflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</div></div>
+      <div class="kpi"><div class="kpi-label">Total Outflow</div>
+        <div class="kpi-value red">₦${totals.outflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</div></div>
+      <div class="kpi"><div class="kpi-label">Net Balance</div>
+        <div class="kpi-value ${totals.net >= 0 ? "green" : "red"}">₦${totals.net.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</div></div>
+      <div class="kpi"><div class="kpi-label">Net Profit Margin</div>
+        <div class="kpi-value ${parseFloat(totals.margin) >= 0 ? "green" : "red"}">${totals.margin}%</div></div>
     </div>
   </div>
+
+  ${projSection}
 
   <div class="section">
     <div class="section-title">Capital Deployment by Category</div>
     <table>
-      <thead>
-        <tr>
-          <th>Category</th>
-          <th style="text-align:right">Amount (NGN)</th>
-          <th style="text-align:right">% of Outflows</th>
-        </tr>
-      </thead>
+      <thead><tr>
+        <th>Category</th><th style="text-align:right">Amount (NGN)</th><th style="text-align:right">% of Outflows</th>
+      </tr></thead>
       <tbody>${catRows}</tbody>
     </table>
   </div>
@@ -245,14 +312,9 @@ function exportPDF(
   <div class="section">
     <div class="section-title">Weekly Breakdown</div>
     <table>
-      <thead>
-        <tr>
-          <th>Week Starting</th>
-          <th style="text-align:right">Inflow</th>
-          <th style="text-align:right">Outflow</th>
-          <th style="text-align:right">Net Balance</th>
-        </tr>
-      </thead>
+      <thead><tr>
+        <th>Week Starting</th><th style="text-align:right">Inflow</th><th style="text-align:right">Outflow</th><th style="text-align:right">Net Balance</th>
+      </tr></thead>
       <tbody>${weekRows}</tbody>
     </table>
   </div>
@@ -261,28 +323,24 @@ function exportPDF(
     <span>Cash Bot — Automated Financial Intelligence for Nigerian Entrepreneurs</span>
     <span>Confidential — Not for Distribution</span>
   </div>
-
   <script>window.onload = function(){ window.print(); }</script>
 </body>
 </html>`;
 
   const win = window.open("", "_blank", "width=900,height=700");
-  if (!win) {
-    alert("Please allow pop-ups to export the PDF report.");
-    return;
-  }
+  if (!win) { alert("Please allow pop-ups to export the PDF report."); return; }
   win.document.write(html);
   win.document.close();
 }
 
-// ── Category helpers ──────────────────────────────────────────────────────────
+// ── Category metadata ─────────────────────────────────────────────────────────
 
 const TAG_META: Record<string, { label: string; color: string }> = {
-  cogs: { label: "Cost of Goods Sold (COGS)", color: "bg-amber-900/50 text-amber-400" },
-  opex: { label: "Operating Expenses (OPEX)", color: "bg-blue-900/50 text-blue-400" },
-  personal_essential: { label: "Personal Essential", color: "bg-violet-900/50 text-violet-400" },
-  personal_luxury: { label: "Personal Luxury", color: "bg-pink-900/50 text-pink-400" },
-  revenue: { label: "Revenue (Inflows)", color: "bg-emerald-900/50 text-emerald-400" },
+  cogs:               { label: "Cost of Goods Sold (COGS)", color: "bg-amber-900/50 text-amber-400" },
+  opex:               { label: "Operating Expenses (OPEX)", color: "bg-blue-900/50 text-blue-400" },
+  personal_essential: { label: "Personal Essential",        color: "bg-violet-900/50 text-violet-400" },
+  personal_luxury:    { label: "Personal Luxury",           color: "bg-pink-900/50 text-pink-400" },
+  revenue:            { label: "Revenue (Inflows)",         color: "bg-emerald-900/50 text-emerald-400" },
 };
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
@@ -301,45 +359,166 @@ function Skeleton() {
   );
 }
 
+// ── Project breakdown table ───────────────────────────────────────────────────
+
+function ProjectBreakdown({
+  projects,
+  loading,
+  selectedId,
+}: {
+  projects: ProjectSummaryRow[];
+  loading: boolean;
+  selectedId: string | null;
+}) {
+  const filtered = selectedId ? projects.filter((p) => p.project_id === selectedId) : projects;
+
+  if (loading) {
+    return (
+      <div className="space-y-2 animate-pulse">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-12 rounded-xl bg-zinc-800" />
+        ))}
+      </div>
+    );
+  }
+
+  if (filtered.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 py-10 text-center">
+        <svg className="mb-3 h-8 w-8 text-zinc-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+          <path d="M2 7a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2Z" />
+        </svg>
+        <p className="text-xs font-medium text-zinc-500">No projects yet</p>
+        <p className="mt-0.5 text-[11px] text-zinc-600">
+          Issue an invoice with a project name to see project-level analytics.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-zinc-800">
+      <table className="w-full min-w-[560px] text-sm">
+        <thead>
+          <tr className="border-b border-zinc-800 bg-zinc-900/80">
+            {[
+              { label: "Project",       align: "left"  },
+              { label: "Inflow",        align: "right" },
+              { label: "Outflow",       align: "right" },
+              { label: "Net Balance",   align: "right" },
+              { label: "Invoices",      align: "right" },
+              { label: "Transactions",  align: "right" },
+            ].map(({ label, align }) => (
+              <th
+                key={label}
+                className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 text-${align}`}
+              >
+                {label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-800/60 bg-zinc-900">
+          {filtered.map((p) => {
+            const isUnassigned = p.project_id === null;
+            const isSelected   = !isUnassigned && selectedId === p.project_id;
+            return (
+              <tr
+                key={p.project_id ?? "__unassigned__"}
+                className={`transition ${
+                  isSelected
+                    ? "bg-emerald-950/20"
+                    : isUnassigned
+                    ? "bg-zinc-800/20"
+                    : "hover:bg-zinc-800/40"
+                }`}
+              >
+                <td className="max-w-[200px] px-5 py-4 font-medium">
+                  <span className={`flex items-center gap-2 ${isUnassigned ? "text-zinc-500" : "text-zinc-200"}`}>
+                    {isUnassigned && (
+                      <svg className="h-3.5 w-3.5 shrink-0 text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <circle cx="12" cy="12" r="10" strokeDasharray="4 2" />
+                      </svg>
+                    )}
+                    <span className="truncate">{p.project_name}</span>
+                    {isSelected && (
+                      <span className="shrink-0 rounded-full bg-emerald-900/50 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+                        filtered
+                      </span>
+                    )}
+                    {isUnassigned && (
+                      <span className="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-500">
+                        no project
+                      </span>
+                    )}
+                  </span>
+                </td>
+                <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${isUnassigned ? "text-zinc-400" : "text-emerald-400"}`}>
+                  <Amt value={fmt(p.total_inflow)} />
+                </td>
+                <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${isUnassigned ? "text-zinc-400" : "text-red-400"}`}>
+                  {p.total_outflow > 0 ? <><span className="font-mono">−</span><Amt value={fmt(p.total_outflow)} /></> : "—"}
+                </td>
+                <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${
+                  isUnassigned ? "text-zinc-400" : p.net_balance >= 0 ? "text-emerald-400" : "text-red-400"
+                }`}>
+                  {p.net_balance < 0 && <span className="font-mono">−</span>}
+                  <Amt value={fmt(Math.abs(p.net_balance))} />
+                </td>
+                <td className="whitespace-nowrap px-5 py-4 text-right text-zinc-400">{p.invoice_count}</td>
+                <td className="whitespace-nowrap px-5 py-4 text-right text-zinc-400">{p.tx_count}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function AnalyticsDashboard() {
-  const { activeBusiness } = useWorkspace();
-  const { data, loading, error } = useAnalytics();
+interface AnalyticsDashboardProps {
+  projectId: string | null;
+  onProjectChange: (id: string | null, name: string | null) => void;
+}
 
-  // Aggregate totals across all weeks
+export default function AnalyticsDashboard({ projectId, onProjectChange }: AnalyticsDashboardProps) {
+  const { activeBusiness } = useWorkspace();
+
+  const { projects: projectOptions, loading: projectsLoading } = useProjects();
+  const { data, loading, error }                                = useAnalytics(projectId);
+  const { projects, loading: projLoading }                      = useProjectAnalytics();
+
+  const selectedProjectName = projectId
+    ? (projectOptions.find((p) => p.id === projectId)?.name ?? null)
+    : null;
+
   const totals = useMemo(() => {
-    const inflow = data.reduce((s, r) => s + r.total_inflow, 0);
+    const inflow  = data.reduce((s, r) => s + r.total_inflow,  0);
     const outflow = data.reduce((s, r) => s + r.total_outflow, 0);
-    const net = inflow - outflow;
-    const margin = inflow === 0 ? "0.0" : ((net / inflow) * 100).toFixed(1);
+    const net     = inflow - outflow;
+    const margin  = inflow === 0 ? "0.0" : ((net / inflow) * 100).toFixed(1);
     return { inflow, outflow, net, margin };
   }, [data]);
 
-  // % change vs prior week (data is sorted DESC from RPC)
   const changes = useMemo(() => {
     if (data.length < 2) return { inflow: null, outflow: null, net: null };
     const [cur, prev] = [data[0], data[1]];
     return {
-      inflow: pctChange(cur.total_inflow, prev.total_inflow),
+      inflow:  pctChange(cur.total_inflow,  prev.total_inflow),
       outflow: pctChange(cur.total_outflow, prev.total_outflow),
-      net: pctChange(cur.net_balance, prev.net_balance),
+      net:     pctChange(cur.net_balance,   prev.net_balance),
     };
   }, [data]);
 
-  // Category breakdown across all weeks, sorted by amount DESC
   const categories = useMemo(() => {
-    const map: Record<string, number> = {
-      cogs: 0,
-      opex: 0,
-      personal_essential: 0,
-      personal_luxury: 0,
-    };
+    const map: Record<string, number> = { cogs: 0, opex: 0, personal_essential: 0, personal_luxury: 0 };
     for (const r of data) {
-      map.cogs += r.cogs;
-      map.opex += r.opex;
+      map.cogs               += r.cogs;
+      map.opex               += r.opex;
       map.personal_essential += r.personal_essential;
-      map.personal_luxury += r.personal_luxury;
+      map.personal_luxury    += r.personal_luxury;
     }
     const totalOut = totals.outflow || 1;
     return Object.entries(map)
@@ -347,28 +526,19 @@ export default function AnalyticsDashboard() {
       .sort(([, a], [, b]) => b - a)
       .map(([key, amount]) => ({
         key,
-        label: TAG_META[key]?.label ?? key,
-        color: TAG_META[key]?.color ?? "bg-zinc-800 text-zinc-400",
+        label:  TAG_META[key]?.label  ?? key,
+        color:  TAG_META[key]?.color  ?? "bg-zinc-800 text-zinc-400",
         amount,
         pct: ((amount / totalOut) * 100).toFixed(1),
       }));
   }, [data, totals.outflow]);
-
-  // Data for export helpers
-  const exportCategories = categories.map((c) => ({
-    label: c.label,
-    amount: c.amount,
-    pct: c.pct,
-  }));
 
   const workspaceName = activeBusiness?.name ?? "Personal Ledger";
 
   if (!activeBusiness) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 py-20 text-center">
-        <p className="text-sm font-medium text-zinc-500">
-          Select a business workspace to view analytics.
-        </p>
+        <p className="text-sm font-medium text-zinc-500">Select a business workspace to view analytics.</p>
       </div>
     );
   }
@@ -384,59 +554,57 @@ export default function AnalyticsDashboard() {
     );
   }
 
-  if (data.length === 0) {
+  if (data.length === 0 && !projectId) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 py-20 text-center">
         <svg className="mb-4 h-10 w-10 text-zinc-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-          <path d="M3 3v18h18" />
-          <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
+          <path d="M3 3v18h18" /><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
         </svg>
         <p className="text-sm font-medium text-zinc-500">No analytics data yet</p>
-        <p className="mt-1 text-xs text-zinc-600">
-          Log transactions to generate your weekly performance report.
-        </p>
+        <p className="mt-1 text-xs text-zinc-600">Log transactions to generate your weekly performance report.</p>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-8">
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <SummaryCard
-          label="Total Inflow"
-          value={fmt(totals.inflow)}
-          change={changes.inflow}
-          positive={true}
-        />
-        <SummaryCard
-          label="Total Outflow"
-          value={fmt(totals.outflow)}
-          change={changes.outflow !== null ? -changes.outflow : null}
-          positive={false}
-        />
-        <SummaryCard
-          label="Net Balance"
-          value={fmt(totals.net)}
-          change={changes.net}
-          positive={totals.net >= 0}
-        />
-        <SummaryCard
-          label="Net Profit Margin"
-          value={`${totals.margin}%`}
-          positive={parseFloat(totals.margin) >= 0}
-          sub={`Across ${data.length} week${data.length !== 1 ? "s" : ""}`}
-        />
-      </div>
+  const exportCats = categories.map(({ label, amount, pct }) => ({ label, amount, pct }));
 
-      {/* Export controls */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-zinc-300">
-          Weekly Performance — {workspaceName}
-        </h2>
-        <div className="flex gap-2">
+  return (
+    <div className="space-y-6">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {projectId ? (
+            <button
+              onClick={() => onProjectChange(null, null)}
+              className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              Back to {workspaceName}
+            </button>
+          ) : (
+            <h2 className="text-sm font-semibold text-zinc-300">
+              Weekly Performance — {workspaceName}
+            </h2>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <ProjectFilter
+            selectedId={projectId}
+            onChange={(id) => {
+              const name = id ? (projectOptions.find((p) => p.id === id)?.name ?? null) : null;
+              onProjectChange(id, name);
+            }}
+            options={projectOptions.map((p) => ({ id: p.id, name: p.name }))}
+            loading={projectsLoading}
+          />
+
+          <div className="h-4 w-px bg-zinc-700" />
+
           <button
-            onClick={() => downloadCSV(data, workspaceName)}
+            onClick={() => downloadCSV(data, projects, workspaceName, selectedProjectName ?? null)}
             className="flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-white transition"
           >
             <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -444,12 +612,10 @@ export default function AnalyticsDashboard() {
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-            Download CSV
+            CSV
           </button>
           <button
-            onClick={() =>
-              exportPDF(data, workspaceName, totals, exportCategories)
-            }
+            onClick={() => exportPDF(data, projects, workspaceName, selectedProjectName ?? null, totals, exportCats)}
             className="flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-white transition"
           >
             <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -458,108 +624,102 @@ export default function AnalyticsDashboard() {
               <line x1="16" y1="13" x2="8" y2="13" />
               <line x1="16" y1="17" x2="8" y2="17" />
             </svg>
-            Export PDF
+            PDF
           </button>
         </div>
       </div>
 
-      {/* Weekly breakdown table */}
-      <div className="overflow-hidden rounded-2xl border border-zinc-800">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-800 bg-zinc-900/80">
-              {["Week Starting", "Inflow", "Outflow", "Net Balance"].map((h) => (
-                <th
-                  key={h}
-                  className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 ${
-                    h === "Week Starting" ? "text-left" : "text-right"
-                  }`}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-800/60 bg-zinc-900">
-            {data.map((row) => (
-              <tr key={row.week_start} className="hover:bg-zinc-800/40 transition">
-                <td className="whitespace-nowrap px-5 py-4 text-zinc-400">
-                  {fmtDate(row.week_start)}
-                </td>
-                <td className="whitespace-nowrap px-5 py-4 text-right font-mono font-semibold text-emerald-400">
-                  {fmt(row.total_inflow)}
-                </td>
-                <td className="whitespace-nowrap px-5 py-4 text-right font-mono font-semibold text-red-400">
-                  −{fmt(row.total_outflow)}
-                </td>
-                <td
-                  className={`whitespace-nowrap px-5 py-4 text-right font-mono font-semibold ${
-                    row.net_balance >= 0 ? "text-emerald-400" : "text-red-400"
-                  }`}
-                >
-                  {row.net_balance < 0 && "−"}
-                  {fmt(Math.abs(row.net_balance))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* KPI cards */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+        <SummaryCard label="Total Inflow"      value={fmt(totals.inflow)}  change={changes.inflow}  positive={true} />
+        <SummaryCard label="Total Outflow"     value={fmt(totals.outflow)} change={changes.outflow !== null ? -changes.outflow : null} positive={false} />
+        <SummaryCard label="Net Balance"       value={fmt(totals.net)}     change={changes.net}     positive={totals.net >= 0} />
+        <SummaryCard
+          label="Net Profit Margin"
+          value={`${totals.margin}%`}
+          positive={parseFloat(totals.margin) >= 0}
+          sub={`Across ${data.length} week${data.length !== 1 ? "s" : ""}${selectedProjectName ? ` · ${selectedProjectName}` : ""}`}
+        />
       </div>
 
-      {/* Capital deployment breakdown */}
-      {categories.length > 0 && (
-        <div>
-          <h2 className="mb-4 text-sm font-semibold text-zinc-300">
-            Capital Deployment
-          </h2>
-          <div className="overflow-hidden rounded-2xl border border-zinc-800">
-            <table className="w-full text-sm">
+      {/* Empty state when a filter yields no data */}
+      {data.length === 0 && projectId ? (
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 py-12 text-center">
+          <p className="text-sm font-medium text-zinc-500">No transactions for this project yet.</p>
+          <button onClick={() => onProjectChange(null, null)} className="mt-3 text-xs text-emerald-500 hover:text-emerald-400 transition">
+            ← Back to {workspaceName}
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Weekly table */}
+          <div className="overflow-x-auto rounded-2xl border border-zinc-800">
+            <table className="w-full min-w-[480px] text-sm">
               <thead>
                 <tr className="border-b border-zinc-800 bg-zinc-900/80">
-                  <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                    Category
-                  </th>
-                  <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                    Total Deployed
-                  </th>
-                  <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                    % of Outflows
-                  </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                    Share
-                  </th>
+                  {["Week Starting", "Inflow", "Outflow", "Net Balance"].map((h) => (
+                    <th key={h} className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 ${h === "Week Starting" ? "text-left" : "text-right"}`}>
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 bg-zinc-900">
-                {categories.map((cat) => (
-                  <tr key={cat.key} className="hover:bg-zinc-800/40 transition">
-                    <td className="px-5 py-4">
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${cat.color}`}
-                      >
-                        {cat.label}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right font-mono font-semibold text-zinc-200">
-                      {fmt(cat.amount)}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right text-sm font-semibold text-zinc-300">
-                      {cat.pct}%
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="h-1.5 w-full min-w-[80px] max-w-[120px] rounded-full bg-zinc-800">
-                        <div
-                          className="h-1.5 rounded-full bg-emerald-500"
-                          style={{ width: `${cat.pct}%` }}
-                        />
-                      </div>
+                {data.map((row) => (
+                  <tr key={row.week_start} className="hover:bg-zinc-800/40 transition">
+                    <td className="whitespace-nowrap px-5 py-4 text-zinc-400">{fmtDate(row.week_start)}</td>
+                    <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-emerald-400"><Amt value={fmt(row.total_inflow)} /></td>
+                    <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-red-400"><span className="font-mono">−</span><Amt value={fmt(row.total_outflow)} /></td>
+                    <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${row.net_balance >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {row.net_balance < 0 && <span className="font-mono">−</span>}<Amt value={fmt(Math.abs(row.net_balance))} />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
+
+          {/* Project breakdown */}
+          <div>
+            <h2 className="mb-4 text-sm font-semibold text-zinc-300">Project Performance</h2>
+            <ProjectBreakdown projects={projects} loading={projLoading} selectedId={projectId} />
+          </div>
+
+          {/* Capital deployment */}
+          {categories.length > 0 && (
+            <div>
+              <h2 className="mb-4 text-sm font-semibold text-zinc-300">Capital Deployment</h2>
+              <div className="overflow-x-auto rounded-2xl border border-zinc-800">
+                <table className="w-full min-w-[480px] text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-800 bg-zinc-900/80">
+                      <th className="px-5 py-3.5 text-left  text-xs font-semibold uppercase tracking-wider text-zinc-500">Category</th>
+                      <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">Total Deployed</th>
+                      <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">% of Outflows</th>
+                      <th className="px-5 py-3.5 text-left  text-xs font-semibold uppercase tracking-wider text-zinc-500">Share</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/60 bg-zinc-900">
+                    {categories.map((cat) => (
+                      <tr key={cat.key} className="hover:bg-zinc-800/40 transition">
+                        <td className="px-5 py-4">
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${cat.color}`}>{cat.label}</span>
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-zinc-200"><Amt value={fmt(cat.amount)} /></td>
+                        <td className="whitespace-nowrap px-5 py-4 text-right text-sm font-semibold text-zinc-300">{cat.pct}%</td>
+                        <td className="px-5 py-4">
+                          <div className="h-1.5 w-full min-w-[80px] max-w-[120px] rounded-full bg-zinc-800">
+                            <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${cat.pct}%` }} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

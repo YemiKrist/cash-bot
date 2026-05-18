@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/providers/AuthProvider";
 import { useWorkspace } from "@/providers/WorkspaceProvider";
-import type { WeeklySummaryRow } from "@/lib/types";
+import type { WeeklySummaryRow, ProjectSummaryRow, Project } from "@/lib/types";
+
+// ── Weekly summary (filterable by project) ────────────────────────────────────
 
 interface UseAnalyticsResult {
   data: WeeklySummaryRow[];
@@ -13,7 +15,7 @@ interface UseAnalyticsResult {
   refetch: () => void;
 }
 
-export function useAnalytics(): UseAnalyticsResult {
+export function useAnalytics(projectId?: string | null): UseAnalyticsResult {
   const { user } = useAuth();
   const { activeBusiness } = useWorkspace();
   const [data, setData] = useState<WeeklySummaryRow[]>([]);
@@ -29,9 +31,12 @@ export function useAnalytics(): UseAnalyticsResult {
     setLoading(true);
     setError(null);
 
+    const params: Record<string, string> = { p_business_id: activeBusiness.id };
+    if (projectId) params.p_project_id = projectId;
+
     const { data: rows, error: rpcError } = await supabase.rpc(
       "get_weekly_business_summary",
-      { p_business_id: activeBusiness.id },
+      params,
     );
 
     if (rpcError) {
@@ -42,11 +47,103 @@ export function useAnalytics(): UseAnalyticsResult {
     }
 
     setLoading(false);
-  }, [user, activeBusiness]);
+  }, [user, activeBusiness, projectId]);
 
   useEffect(() => {
     fetch();
   }, [fetch]);
 
   return { data, loading, error, refetch: fetch };
+}
+
+// ── Per-project breakdown ─────────────────────────────────────────────────────
+
+interface UseProjectAnalyticsResult {
+  projects: ProjectSummaryRow[];
+  loading: boolean;
+  error: string | null;
+}
+
+export function useProjectAnalytics(): UseProjectAnalyticsResult {
+  const { user } = useAuth();
+  const { activeBusiness } = useWorkspace();
+  const [projects, setProjects] = useState<ProjectSummaryRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetch = useCallback(async () => {
+    if (!user || !activeBusiness) {
+      setProjects([]);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    const { data: rows, error: rpcError } = await supabase.rpc(
+      "get_project_summary",
+      { p_business_id: activeBusiness.id },
+    );
+
+    if (rpcError) {
+      setError(rpcError.message);
+      setProjects([]);
+    } else {
+      setProjects((rows as ProjectSummaryRow[]) ?? []);
+    }
+
+    setLoading(false);
+  }, [user, activeBusiness]);
+
+  useEffect(() => {
+    fetch();
+  }, [fetch]);
+
+  return { projects, loading, error };
+}
+
+// ── Projects list (for dropdowns) — calls /api/projects with auth token ───────
+
+interface UseProjectsResult {
+  projects: Project[];
+  loading: boolean;
+}
+
+export function useProjects(): UseProjectsResult {
+  const { user } = useAuth();
+  const { activeBusiness } = useWorkspace();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user || !activeBusiness) {
+      setProjects([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    supabase.auth.getSession().then(({ data: sessionData }) => {
+      const token = sessionData.session?.access_token ?? "";
+
+      fetch(`/api/projects?businessId=${activeBusiness.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => r.json())
+        .then((body: Project[] | { error: string }) => {
+          if (!cancelled) {
+            setProjects(Array.isArray(body) ? body : []);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setLoading(false);
+        });
+    });
+
+    return () => { cancelled = true; };
+  }, [user, activeBusiness]);
+
+  return { projects, loading };
 }

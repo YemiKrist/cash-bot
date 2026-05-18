@@ -86,8 +86,30 @@ export default function TransactionModal({ onClose, onSaved }: Props) {
   const [phase, setPhase] = useState<SavePhase>("idle");
   const [error, setError] = useState<string | null>(null);
 
+  const [projectId, setProjectId] = useState("");
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+
   const overlayRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch projects for active business
+  useEffect(() => {
+    if (!activeBusiness) { setProjects([]); setProjectId(""); return; }
+    setProjectsLoading(true);
+    supabase
+      .from("projects")
+      .select("id, name")
+      .eq("business_id", activeBusiness.id)
+      .order("name")
+      .then(({ data }) => {
+        setProjects((data as { id: string; name: string }[]) ?? []);
+        setProjectsLoading(false);
+      });
+  }, [activeBusiness]);
+
+  // Reset project selection when switching workspaces
+  useEffect(() => { setProjectId(""); }, [activeBusiness]);
 
   // Keep tag valid whenever type or workspace changes
   useEffect(() => {
@@ -142,6 +164,7 @@ export default function TransactionModal({ onClose, onSaved }: Props) {
       financial_tag: tag,
       description: description.trim() || null,
       media_storage_url: mediaStorageUrl,
+      project_id: projectId || null,
       created_at: new Date(datetime).toISOString(),
     });
 
@@ -229,19 +252,68 @@ export default function TransactionModal({ onClose, onSaved }: Props) {
             <label htmlFor="tag" className="mb-1.5 block text-xs font-medium text-zinc-400">
               Financial Tag
             </label>
-            <select
-              id="tag"
-              value={tag}
-              onChange={(e) => setTag(e.target.value as FinancialTag)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-2.5 text-sm text-white outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
-            >
-              {tagsFor(type, activeBusiness !== null).map((t) => (
-                <option key={t} value={t}>
-                  {tagLabel(t)}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                id="tag"
+                value={tag}
+                onChange={(e) => setTag(e.target.value as FinancialTag)}
+                className="w-full appearance-none rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-2.5 pr-9 text-sm text-white outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+              >
+                {tagsFor(type, activeBusiness !== null).map((t) => (
+                  <option key={t} value={t}>
+                    {tagLabel(t)}
+                  </option>
+                ))}
+              </select>
+              <svg
+                className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </div>
           </div>
+
+          {/* Project (business only) */}
+          {activeBusiness && (
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-zinc-400">
+                Project <span className="text-zinc-600">(optional)</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                  disabled={projectsLoading}
+                  className="w-full appearance-none rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-2.5 pr-9 text-sm text-white outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 transition"
+                >
+                  <option value="">— No project —</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <svg
+                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+              {!projectsLoading && projects.length === 0 && (
+                <p className="mt-1.5 text-[11px] text-zinc-600">
+                  No projects yet — add one from the sidebar to link it here.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Description */}
           <div>

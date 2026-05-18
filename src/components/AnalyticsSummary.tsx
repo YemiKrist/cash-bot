@@ -44,22 +44,20 @@ function StatCard({ label, value, positive, sub }: CardProps) {
       ? "text-red-400"
       : "text-white";
 
-  const glowClass =
-    positive === true
-      ? "shadow-[0_0_18px_-4px_rgba(52,211,153,0.25)]"
-      : positive === false
-      ? "shadow-[0_0_18px_-4px_rgba(248,113,113,0.2)]"
-      : "";
-
   return (
-    <div
-      className={`flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900 p-6 ${glowClass}`}
-    >
+    <div className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
         {label}
       </p>
-      <p className={`mt-3 font-mono text-2xl font-bold leading-none ${valueColor}`}>
-        {value}
+      <p className={`mt-3 text-2xl font-bold leading-none ${valueColor}`}>
+        {value.startsWith("₦") ? (
+          <>
+            <span className="font-sans">₦</span>
+            <span className="font-mono">{value.slice(1)}</span>
+          </>
+        ) : (
+          <span className="font-mono">{value}</span>
+        )}
       </p>
       {sub && <p className="mt-2 text-xs text-zinc-600">{sub}</p>}
     </div>
@@ -80,7 +78,7 @@ function BusinessSummary({ transactions }: { transactions: Transaction[] }) {
   }, [transactions]);
 
   return (
-    <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
       <StatCard
         label="Revenue"
         value={formatCurrency(revenue)}
@@ -153,7 +151,7 @@ export default function AnalyticsSummary({ transactions }: Props) {
   const { activeBusiness } = useWorkspace();
 
   return (
-    <section className="px-8 pt-6 pb-2">
+    <section className="px-4 pb-2 pt-4 lg:px-8 lg:pt-6">
       {activeBusiness ? (
         <BusinessSummary transactions={transactions} />
       ) : (
