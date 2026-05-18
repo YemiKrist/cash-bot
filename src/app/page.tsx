@@ -182,7 +182,7 @@ function MobileSummaryBar({ transactions }: { transactions: Transaction[] }) {
 
 // ── Mobile transaction card ───────────────────────────────────────────────────
 
-function TransactionCard({ tx }: { tx: Transaction }) {
+function TransactionCard({ tx, onEdit }: { tx: Transaction; onEdit?: (tx: Transaction) => void }) {
   const isInflow = tx.transaction_type === "inflow";
   return (
     <div className="flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-3.5 transition-colors active:bg-zinc-800">
@@ -221,13 +221,23 @@ function TransactionCard({ tx }: { tx: Transaction }) {
         </div>
       </div>
 
-      <div
-        className={`shrink-0 text-right text-sm font-semibold ${
-          isInflow ? "text-emerald-400" : "text-red-400"
-        }`}
-      >
-        {!isInflow && <span className="font-mono text-xs">−</span>}
-        <Amt value={formatCurrency(tx.amount)} />
+      <div className="flex shrink-0 items-center gap-2">
+        <div className={`text-right text-sm font-semibold ${isInflow ? "text-emerald-400" : "text-red-400"}`}>
+          {!isInflow && <span className="font-mono text-xs">−</span>}
+          <Amt value={formatCurrency(tx.amount)} />
+        </div>
+        {onEdit && (
+          <button
+            onClick={() => onEdit(tx)}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-zinc-700 hover:text-zinc-200"
+            aria-label="Edit transaction"
+          >
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -261,9 +271,10 @@ function WorkspaceHeading({ projectName }: { projectName: string | null }) {
 interface LedgerTableProps {
   transactions: Transaction[];
   loading: boolean;
+  onEdit?: (tx: Transaction) => void;
 }
 
-function LedgerTable({ transactions, loading }: LedgerTableProps) {
+function LedgerTable({ transactions, loading, onEdit }: LedgerTableProps) {
   if (loading) {
     return (
       <div className="space-y-2">
@@ -293,11 +304,11 @@ function LedgerTable({ transactions, loading }: LedgerTableProps) {
       <table className="w-full min-w-[640px] text-sm">
         <thead>
           <tr className="border-b border-zinc-800 bg-zinc-900/80">
-            {["Date", "Description", "Type", "Tag", "Amount"].map((h, i) => (
+            {["Date", "Description", "Type", "Tag", "Amount", ""].map((h, i) => (
               <th
-                key={h}
+                key={i}
                 className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 ${
-                  i === 4 ? "text-right" : "text-left"
+                  i === 4 ? "text-right" : i === 5 ? "w-10" : "text-left"
                 }`}
               >
                 {h}
@@ -343,6 +354,20 @@ function LedgerTable({ transactions, loading }: LedgerTableProps) {
                 {tx.transaction_type === "outflow" && <span className="font-mono">−</span>}
                 <Amt value={formatCurrency(tx.amount)} />
               </td>
+              <td className="px-3 py-4">
+                {onEdit && (
+                  <button
+                    onClick={() => onEdit(tx)}
+                    className="rounded-lg p-1.5 text-zinc-600 opacity-0 transition hover:bg-zinc-700 hover:text-zinc-200 group-hover:opacity-100"
+                    aria-label="Edit transaction"
+                  >
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -365,6 +390,8 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<Tab>("transactions");
   const [showTxModal, setShowTxModal] = useState(false);
   const [showInvModal, setShowInvModal] = useState(false);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [editingInv, setEditingInv] = useState<Invoice | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [analyticsProjectId, setAnalyticsProjectId] = useState<string | null>(null);
   const [analyticsProjectName, setAnalyticsProjectName] = useState<string | null>(null);
@@ -667,17 +694,17 @@ export default function DashboardPage() {
                     <p className="mt-1 text-sm text-zinc-600">Tap + to record your first entry</p>
                   </div>
                 ) : (
-                  transactions.map((tx) => <TransactionCard key={tx.id} tx={tx} />)
+                  transactions.map((tx) => <TransactionCard key={tx.id} tx={tx} onEdit={setEditingTx} />)
                 )}
               </div>
 
               {/* Desktop table */}
               <div className="hidden lg:block">
-                <LedgerTable transactions={transactions} loading={loadingTx} />
+                <LedgerTable transactions={transactions} loading={loadingTx} onEdit={setEditingTx} />
               </div>
             </>
           ) : activeTab === "invoices" ? (
-            <InvoiceList invoices={invoices} loading={loadingInv} />
+            <InvoiceList invoices={invoices} loading={loadingInv} onEdit={setEditingInv} />
           ) : (
             <AnalyticsDashboard
               projectId={null}
@@ -742,11 +769,19 @@ export default function DashboardPage() {
 
       </main>
 
-      {showTxModal && (
-        <TransactionModal onClose={() => setShowTxModal(false)} onSaved={fetchTransactions} />
+      {(showTxModal || editingTx) && (
+        <TransactionModal
+          onClose={() => { setShowTxModal(false); setEditingTx(null); }}
+          onSaved={fetchTransactions}
+          initialData={editingTx ?? undefined}
+        />
       )}
-      {showInvModal && (
-        <InvoiceModal onClose={() => setShowInvModal(false)} onSaved={fetchInvoices} />
+      {(showInvModal || editingInv) && (
+        <InvoiceModal
+          onClose={() => { setShowInvModal(false); setEditingInv(null); }}
+          onSaved={fetchInvoices}
+          initialData={editingInv ?? undefined}
+        />
       )}
       {showSettings && (
         <BusinessSettings onClose={() => setShowSettings(false)} />
