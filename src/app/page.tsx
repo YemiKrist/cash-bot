@@ -182,7 +182,16 @@ function MobileSummaryBar({ transactions }: { transactions: Transaction[] }) {
 
 // ── Mobile transaction card ───────────────────────────────────────────────────
 
-function TransactionCard({ tx, onEdit }: { tx: Transaction; onEdit?: (tx: Transaction) => void }) {
+function TransactionCard({
+  tx,
+  onEdit,
+  onDelete,
+}: {
+  tx: Transaction;
+  onEdit?: (tx: Transaction) => void;
+  onDelete?: (tx: Transaction) => void;
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const isInflow = tx.transaction_type === "inflow";
   return (
     <div className="flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-3.5 transition-colors active:bg-zinc-800">
@@ -221,7 +230,7 @@ function TransactionCard({ tx, onEdit }: { tx: Transaction; onEdit?: (tx: Transa
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5">
         <div className={`text-right text-sm font-semibold ${isInflow ? "text-emerald-400" : "text-red-400"}`}>
           {!isInflow && <span className="font-mono text-xs">−</span>}
           <Amt value={formatCurrency(tx.amount)} />
@@ -237,6 +246,40 @@ function TransactionCard({ tx, onEdit }: { tx: Transaction; onEdit?: (tx: Transa
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>
           </button>
+        )}
+        {onDelete && (
+          confirmDelete ? (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => { onDelete(tx); setConfirmDelete(false); }}
+                className="rounded-lg bg-red-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-500"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:text-zinc-300"
+                aria-label="Cancel"
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-red-950/60 hover:text-red-400"
+              aria-label="Delete transaction"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6M14 11v6" />
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              </svg>
+            </button>
+          )
         )}
       </div>
     </div>
@@ -272,9 +315,11 @@ interface LedgerTableProps {
   transactions: Transaction[];
   loading: boolean;
   onEdit?: (tx: Transaction) => void;
+  onDelete?: (tx: Transaction) => void;
 }
 
-function LedgerTable({ transactions, loading, onEdit }: LedgerTableProps) {
+function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTableProps) {
+  const [confirmTxId, setConfirmTxId] = useState<number | null>(null);
   if (loading) {
     return (
       <div className="space-y-2">
@@ -355,18 +400,54 @@ function LedgerTable({ transactions, loading, onEdit }: LedgerTableProps) {
                 <Amt value={formatCurrency(tx.amount)} />
               </td>
               <td className="px-3 py-4">
-                {onEdit && (
-                  <button
-                    onClick={() => onEdit(tx)}
-                    className="rounded-lg p-1.5 text-zinc-600 opacity-0 transition hover:bg-zinc-700 hover:text-zinc-200 group-hover:opacity-100"
-                    aria-label="Edit transaction"
-                  >
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                    </svg>
-                  </button>
-                )}
+                <div className="flex items-center justify-end gap-1">
+                  {onEdit && (
+                    <button
+                      onClick={() => onEdit(tx)}
+                      className="rounded-lg p-1.5 text-zinc-600 opacity-0 transition hover:bg-zinc-700 hover:text-zinc-200 group-hover:opacity-100"
+                      aria-label="Edit transaction"
+                    >
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                    </button>
+                  )}
+                  {onDelete && (
+                    confirmTxId === tx.id ? (
+                      <div className="flex items-center gap-1 opacity-100">
+                        <button
+                          onClick={() => { onDelete(tx); setConfirmTxId(null); }}
+                          className="rounded-lg bg-red-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-500"
+                        >
+                          Delete
+                        </button>
+                        <button
+                          onClick={() => setConfirmTxId(null)}
+                          className="rounded-lg p-1.5 text-zinc-500 transition hover:text-zinc-300"
+                          aria-label="Cancel"
+                        >
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmTxId(tx.id)}
+                        className="rounded-lg p-1.5 text-zinc-600 opacity-0 transition hover:bg-red-950/60 hover:text-red-400 group-hover:opacity-100"
+                        aria-label="Delete transaction"
+                      >
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                          <path d="M10 11v6M14 11v6" />
+                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                        </svg>
+                      </button>
+                    )
+                  )}
+                </div>
               </td>
             </tr>
           ))}
@@ -453,6 +534,16 @@ export default function DashboardPage() {
         </div>
       </div>
     );
+  }
+
+  async function handleDeleteTx(tx: Transaction) {
+    await supabase.from("transactions").delete().eq("id", tx.id);
+    fetchTransactions();
+  }
+
+  async function handleDeleteInv(inv: Invoice) {
+    await supabase.from("invoices").delete().eq("id", inv.id);
+    fetchInvoices();
   }
 
   function clearProject() {
@@ -694,17 +785,17 @@ export default function DashboardPage() {
                     <p className="mt-1 text-sm text-zinc-600">Tap + to record your first entry</p>
                   </div>
                 ) : (
-                  transactions.map((tx) => <TransactionCard key={tx.id} tx={tx} onEdit={setEditingTx} />)
+                  transactions.map((tx) => <TransactionCard key={tx.id} tx={tx} onEdit={setEditingTx} onDelete={handleDeleteTx} />)
                 )}
               </div>
 
               {/* Desktop table */}
               <div className="hidden lg:block">
-                <LedgerTable transactions={transactions} loading={loadingTx} onEdit={setEditingTx} />
+                <LedgerTable transactions={transactions} loading={loadingTx} onEdit={setEditingTx} onDelete={handleDeleteTx} />
               </div>
             </>
           ) : activeTab === "invoices" ? (
-            <InvoiceList invoices={invoices} loading={loadingInv} onEdit={setEditingInv} />
+            <InvoiceList invoices={invoices} loading={loadingInv} onEdit={setEditingInv} onDelete={handleDeleteInv} />
           ) : (
             <AnalyticsDashboard
               projectId={null}

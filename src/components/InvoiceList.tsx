@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { Invoice, InvoiceStatus } from "@/lib/types";
 import { Amt } from "@/components/Amt";
 
@@ -45,9 +46,11 @@ interface Props {
   invoices: Invoice[];
   loading: boolean;
   onEdit?: (inv: Invoice) => void;
+  onDelete?: (inv: Invoice) => void;
 }
 
-export default function InvoiceList({ invoices, loading, onEdit }: Props) {
+export default function InvoiceList({ invoices, loading, onEdit, onDelete }: Props) {
+  const [confirmInvId, setConfirmInvId] = useState<string | null>(null);
   if (loading) {
     return (
       <div className="space-y-2">
@@ -125,19 +128,55 @@ export default function InvoiceList({ invoices, loading, onEdit }: Props) {
                     {STATUS_LABELS[inv.status]}
                   </span>
                 </td>
-                <td className="px-3 py-4 text-right">
-                  {onEdit && (
-                    <button
-                      onClick={() => onEdit(inv)}
-                      className="rounded-lg p-1.5 text-zinc-600 opacity-0 transition hover:bg-zinc-700 hover:text-zinc-200 group-hover:opacity-100"
-                      aria-label="Edit invoice"
-                    >
-                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-                  )}
+                <td className="px-3 py-4">
+                  <div className="flex items-center justify-end gap-1">
+                    {onEdit && (
+                      <button
+                        onClick={() => onEdit(inv)}
+                        className="rounded-lg p-1.5 text-zinc-600 opacity-0 transition hover:bg-zinc-700 hover:text-zinc-200 group-hover:opacity-100"
+                        aria-label="Edit invoice"
+                      >
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                      </button>
+                    )}
+                    {onDelete && (
+                      confirmInvId === inv.id ? (
+                        <div className="flex items-center gap-1 opacity-100">
+                          <button
+                            onClick={() => { onDelete(inv); setConfirmInvId(null); }}
+                            className="rounded-lg bg-red-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-500"
+                          >
+                            Delete
+                          </button>
+                          <button
+                            onClick={() => setConfirmInvId(null)}
+                            className="rounded-lg p-1.5 text-zinc-500 transition hover:text-zinc-300"
+                            aria-label="Cancel"
+                          >
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmInvId(inv.id)}
+                          className="rounded-lg p-1.5 text-zinc-600 opacity-0 transition hover:bg-red-950/60 hover:text-red-400 group-hover:opacity-100"
+                          aria-label="Delete invoice"
+                        >
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                          </svg>
+                        </button>
+                      )
+                    )}
+                  </div>
                 </td>
               </tr>
             );
