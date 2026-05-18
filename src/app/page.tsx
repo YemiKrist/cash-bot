@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import BusinessSettings from "@/components/BusinessSettings";
 import TransactionModal from "@/components/TransactionModal";
 import InvoiceModal from "@/components/InvoiceModal";
 import InvoiceList from "@/components/InvoiceList";
@@ -368,6 +369,7 @@ export default function DashboardPage() {
   const [analyticsProjectId, setAnalyticsProjectId] = useState<string | null>(null);
   const [analyticsProjectName, setAnalyticsProjectName] = useState<string | null>(null);
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -450,6 +452,7 @@ export default function DashboardPage() {
           setActiveTab("analytics");
           setSidebarOpen(false);
         }}
+        onSettingsClick={() => setShowSettings(true)}
       />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -641,6 +644,7 @@ export default function DashboardPage() {
                 setAnalyticsProjectId(id);
                 setAnalyticsProjectName(name);
               }}
+              onSettingsClick={() => setShowSettings(true)}
             />
           ) : !activeBusiness || activeTab === "transactions" ? (
             <>
@@ -681,6 +685,7 @@ export default function DashboardPage() {
                 setAnalyticsProjectId(id);
                 setAnalyticsProjectName(name);
               }}
+              onSettingsClick={() => setShowSettings(true)}
             />
           )}
         </div>
@@ -742,6 +747,9 @@ export default function DashboardPage() {
       )}
       {showInvModal && (
         <InvoiceModal onClose={() => setShowInvModal(false)} onSaved={fetchInvoices} />
+      )}
+      {showSettings && (
+        <BusinessSettings onClose={() => setShowSettings(false)} />
       )}
     </div>
   );

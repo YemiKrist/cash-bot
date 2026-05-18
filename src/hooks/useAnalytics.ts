@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/providers/AuthProvider";
 import { useWorkspace } from "@/providers/WorkspaceProvider";
-import type { WeeklySummaryRow, ProjectSummaryRow, Project } from "@/lib/types";
+import type { WeeklySummaryRow, ProjectSummaryRow, Project, TaxSummary } from "@/lib/types";
 
 // ── Weekly summary (filterable by project) ────────────────────────────────────
 
@@ -146,4 +146,62 @@ export function useProjects(): UseProjectsResult {
   }, [user, activeBusiness]);
 
   return { projects, loading };
+}
+
+// ── Tax / VAT liability for the current quarter ───────────────────────────────
+
+interface UseTaxSummaryResult {
+  data:    TaxSummary | null;
+  loading: boolean;
+  error:   string | null;
+  refetch: () => void;
+}
+
+export function useTaxSummary(
+  quarterFrom?: string,
+  quarterTo?:   string,
+): UseTaxSummaryResult {
+  const { user }           = useAuth();
+  const { activeBusiness } = useWorkspace();
+  const [data,    setData]    = useState<TaxSummary | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!user || !activeBusiness) { setData(null); return; }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token ?? "";
+
+      const params = new URLSearchParams({ businessId: activeBusiness.id });
+      if (quarterFrom) params.set("from", quarterFrom);
+      if (quarterTo)   params.set("to",   quarterTo);
+
+      const res = await fetch(`/api/analytics/tax?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const json = await res.json() as { error?: string };
+        setError(json.error ?? "Failed to load tax data");
+        setLoading(false);
+        return;
+      }
+
+      const json = await res.json() as TaxSummary | null;
+      setData(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  }, [user, activeBusiness, quarterFrom, quarterTo]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return { data, loading, error, refetch: load };
 }

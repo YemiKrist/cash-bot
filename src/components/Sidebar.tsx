@@ -57,9 +57,10 @@ interface SidebarProps {
   open: boolean;
   onClose: () => void;
   onProjectClick?: (projectId: string, projectName: string) => void;
+  onSettingsClick?: () => void;
 }
 
-export default function Sidebar({ open, onClose, onProjectClick }: SidebarProps) {
+export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick }: SidebarProps) {
   const { businesses, activeBusiness, setActiveBusiness, createBusiness } =
     useWorkspace();
 
@@ -273,7 +274,19 @@ export default function Sidebar({ open, onClose, onProjectClick }: SidebarProps)
         </nav>
 
         {/* Sign out */}
-        <div className="border-t border-zinc-800 pt-3">
+        <div className="border-t border-zinc-800 pt-3 space-y-0.5">
+          {activeBusiness && onSettingsClick && (
+            <button
+              onClick={() => { onSettingsClick(); onClose(); }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300 transition"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              Business Settings
+            </button>
+          )}
           <button
             onClick={() => supabase.auth.signOut()}
             className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-zinc-500 hover:bg-zinc-800/60 hover:text-red-400 transition"

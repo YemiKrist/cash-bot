@@ -39,6 +39,26 @@ export interface Transaction {
 
 export type InvoiceStatus = "unpaid" | "partially_paid" | "paid";
 
+export interface TaxSummary {
+  has_vat:          boolean;
+  tax_name?:        string;
+  vat_rate:         number;
+  output_vat:       number;
+  input_vat:        number;
+  net_liability:    number;
+  taxable_revenue:  number;
+  taxable_expenses: number;
+  invoice_count:    number;
+}
+
+export interface BusinessInvoiceSettings {
+  business_id:    string;
+  has_vat:        boolean;
+  tax_name:       string;
+  tax_percentage: number;
+  updated_at:     string | null;
+}
+
 export interface Invoice {
   id: string;
   business_id: string;

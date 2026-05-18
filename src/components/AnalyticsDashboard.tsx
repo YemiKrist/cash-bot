@@ -1,14 +1,15 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useWorkspace } from "@/providers/WorkspaceProvider";
 import {
   useAnalytics,
   useProjectAnalytics,
   useProjects,
+  useTaxSummary,
 } from "@/hooks/useAnalytics";
 import { Amt } from "@/components/Amt";
-import type { WeeklySummaryRow, ProjectSummaryRow } from "@/lib/types";
+import type { WeeklySummaryRow, ProjectSummaryRow, TaxSummary } from "@/lib/types";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -343,6 +344,156 @@ const TAG_META: Record<string, { label: string; color: string }> = {
   revenue:            { label: "Revenue (Inflows)",         color: "bg-emerald-900/50 text-emerald-400" },
 };
 
+// ── Tax liability card ────────────────────────────────────────────────────────
+
+function currentQuarterLabel(): string {
+  const now = new Date();
+  return `Q${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
+}
+
+function TaxLiabilityCard({
+  tax,
+  loading,
+  onConfigure,
+}: {
+  tax: TaxSummary | null;
+  loading: boolean;
+  onConfigure?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (loading) {
+    return <div className="h-44 animate-pulse rounded-2xl bg-zinc-800" />;
+  }
+
+  // VAT not enabled — prompt to configure
+  if (!tax || !tax.has_vat) {
+    return (
+      <div className="flex flex-col justify-between rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/50 p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+              Estimated Tax Liability
+            </p>
+            <p className="mt-2 text-sm font-medium text-zinc-400">
+              VAT tracking is off
+            </p>
+            <p className="mt-1 text-xs text-zinc-600">
+              Enable VAT in settings to see your quarterly liability estimate.
+            </p>
+          </div>
+          <svg className="h-8 w-8 shrink-0 text-zinc-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+            <path d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+          </svg>
+        </div>
+        {onConfigure && (
+          <button
+            onClick={onConfigure}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-700 py-2 text-xs font-semibold text-zinc-400 transition hover:border-emerald-600 hover:text-emerald-400"
+          >
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            Configure VAT Settings
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const { net_liability, output_vat, input_vat, vat_rate,
+          taxable_revenue, taxable_expenses, invoice_count } = tax;
+  const isOwed   = net_liability >= 0;
+  const quarter  = currentQuarterLabel();
+
+  return (
+    <div className={`rounded-2xl border p-6 transition-all ${
+      isOwed ? "border-amber-800/60 bg-amber-950/20" : "border-emerald-800/60 bg-emerald-950/20"
+    }`}>
+      {/* Header row */}
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+            Estimated Tax Liability
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-600">
+            {quarter} · {tax.tax_name ?? "VAT"} @ {vat_rate}%
+          </p>
+        </div>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+          isOwed ? "bg-amber-900/60 text-amber-400" : "bg-emerald-900/60 text-emerald-400"
+        }`}>
+          {isOwed ? "ESTIMATE DUE" : "REFUND EST."}
+        </span>
+      </div>
+
+      {/* Main figure */}
+      <div className="mt-4">
+        <p className={`text-3xl font-bold leading-none ${isOwed ? "text-amber-400" : "text-emerald-400"}`}>
+          {net_liability < 0 && <span className="font-mono">−</span>}
+          <Amt value={fmt(Math.abs(net_liability))} />
+        </p>
+        <p className="mt-1.5 text-xs text-zinc-500">
+          {isOwed
+            ? `Based on ${invoice_count} invoice${invoice_count !== 1 ? "s" : ""} this quarter`
+            : "Your input VAT exceeds output — refund position"}
+        </p>
+      </div>
+
+      {/* Expand breakdown */}
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="mt-4 flex items-center gap-1.5 text-xs font-medium text-zinc-500 transition hover:text-zinc-300"
+      >
+        <svg
+          className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+        {expanded ? "Hide" : "Show"} breakdown
+      </button>
+
+      {expanded && (
+        <div className="mt-3 space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-zinc-500">
+              Output VAT
+              <span className="ml-1 text-zinc-700">(invoiced ₦{(taxable_revenue / 1000).toFixed(0)}K × {vat_rate}%)</span>
+            </span>
+            <span className="font-semibold text-amber-400">
+              +<Amt value={fmt(output_vat)} />
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-zinc-500">
+              Input VAT
+              <span className="ml-1 text-zinc-700">(expenses ₦{(taxable_expenses / 1000).toFixed(0)}K × {vat_rate}%)</span>
+            </span>
+            <span className="font-semibold text-emerald-400">
+              −<Amt value={fmt(input_vat)} />
+            </span>
+          </div>
+          <div className="border-t border-zinc-700/60 pt-2">
+            <div className="flex items-center justify-between text-xs font-semibold">
+              <span className="text-zinc-300">Net Liability</span>
+              <span className={isOwed ? "text-amber-400" : "text-emerald-400"}>
+                {net_liability < 0 && <span className="font-mono">−</span>}
+                <Amt value={fmt(Math.abs(net_liability))} />
+              </span>
+            </div>
+          </div>
+          <p className="pt-1 text-[10px] leading-relaxed text-zinc-600">
+            This is an estimate only. Consult a tax professional for filing with FIRS.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
 function Skeleton() {
@@ -481,14 +632,16 @@ function ProjectBreakdown({
 interface AnalyticsDashboardProps {
   projectId: string | null;
   onProjectChange: (id: string | null, name: string | null) => void;
+  onSettingsClick?: () => void;
 }
 
-export default function AnalyticsDashboard({ projectId, onProjectChange }: AnalyticsDashboardProps) {
+export default function AnalyticsDashboard({ projectId, onProjectChange, onSettingsClick }: AnalyticsDashboardProps) {
   const { activeBusiness } = useWorkspace();
 
   const { projects: projectOptions, loading: projectsLoading } = useProjects();
   const { data, loading, error }                                = useAnalytics(projectId);
   const { projects, loading: projLoading }                      = useProjectAnalytics();
+  const { data: taxData, loading: taxLoading }                  = useTaxSummary();
 
   const selectedProjectName = projectId
     ? (projectOptions.find((p) => p.id === projectId)?.name ?? null)
@@ -641,6 +794,9 @@ export default function AnalyticsDashboard({ projectId, onProjectChange }: Analy
           sub={`Across ${data.length} week${data.length !== 1 ? "s" : ""}${selectedProjectName ? ` · ${selectedProjectName}` : ""}`}
         />
       </div>
+
+      {/* Tax liability card */}
+      <TaxLiabilityCard tax={taxData} loading={taxLoading} onConfigure={onSettingsClick} />
 
       {/* Empty state when a filter yields no data */}
       {data.length === 0 && projectId ? (
