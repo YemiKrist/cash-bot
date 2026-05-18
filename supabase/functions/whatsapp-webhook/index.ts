@@ -69,6 +69,135 @@ interface VatSettings {
   tax_percentage: number;
 }
 
+// ── Reminder command parser ───────────────────────────────────────────────────
+
+type ReminderCmd =
+  | { type: "enable" }
+  | { type: "disable" }
+  | { type: "status" }
+  | { type: "set"; morning: number; evening: number };
+
+function detectReminderCommand(text: string): ReminderCmd | null {
+  const t = text.trim();
+
+  if (/\b(enable|start|turn on|switch on)\b.*\breminder/i.test(t) ||
+      /\breminder[s]?\s+(on|enable|start)\b/i.test(t)) {
+    return { type: "enable" };
+  }
+  if (/\b(disable|stop|turn off|pause|switch off|cancel)\b.*\breminder/i.test(t) ||
+      /\breminder[s]?\s+(off|disable|stop|pause)\b/i.test(t)) {
+    return { type: "disable" };
+  }
+  if (/\breminder[s]?\s*(settings?|status|info|help)?\s*$/i.test(t) ||
+      /\bmy reminders?\b/i.test(t)) {
+    return { type: "status" };
+  }
+
+  // "Remind me at 9am and 6pm"  /  "Set reminder 8am 7pm"
+  if (/\b(remind(er)?s?|set reminder)\b/i.test(t)) {
+    const matches = [...t.matchAll(/(\d{1,2})(?::\d{2})?\s*(am|pm)/gi)];
+    if (matches.length >= 2) {
+      const toHour = (h: number, ap: string): number => {
+        if (ap === "pm" && h !== 12) return h + 12;
+        if (ap === "am" && h === 12) return 0;
+        return h;
+      };
+      const morning = toHour(parseInt(matches[0][1]), matches[0][2].toLowerCase());
+      const evening = toHour(parseInt(matches[1][1]), matches[1][2].toLowerCase());
+      if (morning >= 0 && morning < 24 && evening >= 0 && evening < 24) {
+        return { type: "set", morning, evening };
+      }
+    }
+  }
+
+  return null;
+}
+
+function fmtHour(h: number): string {
+  if (h === 0)  return "12am (midnight)";
+  if (h === 12) return "12pm (noon)";
+  return h < 12 ? `${h}am` : `${h - 12}pm`;
+}
+
+async function handleReminderCommand(
+  supabase: ReturnType<typeof createClient>,
+  from: string,
+  userId: string,
+  cmd: ReminderCmd,
+): Promise<string> {
+  const DEFAULT = { morning_hour: 9, evening_hour: 18, timezone: "Africa/Lagos" };
+
+  if (cmd.type === "status") {
+    const { data } = await supabase
+      .from("reminder_settings")
+      .select("enabled, morning_hour, evening_hour, timezone")
+      .eq("phone_number", from)
+      .maybeSingle() as { data: { enabled: boolean; morning_hour: number; evening_hour: number; timezone: string } | null };
+
+    if (!data) {
+      return [
+        "📅 You don't have reminders set up yet.",
+        "",
+        "I'll remind you twice a day by default (9am & 6pm Lagos time).",
+        "They activate automatically after your first logged transaction.",
+        "",
+        'To set custom times: "Remind me at 8am and 7pm"',
+        'To disable: "Stop reminders"',
+      ].join("\n");
+    }
+
+    return [
+      `📅 *Reminder Settings*`,
+      "",
+      `Status: ${data.enabled ? "✅ Active" : "⏸️ Paused"}`,
+      `Morning: ${fmtHour(data.morning_hour)}`,
+      `Evening: ${fmtHour(data.evening_hour)}`,
+      `Timezone: ${data.timezone}`,
+      "",
+      'To change times: "Remind me at 8am and 7pm"',
+      `To ${data.enabled ? "disable" : "enable"}: "${data.enabled ? "Stop" : "Start"} reminders"`,
+    ].join("\n");
+  }
+
+  if (cmd.type === "enable") {
+    await supabase.from("reminder_settings").upsert(
+      { phone_number: from, user_id: userId || null, enabled: true, ...DEFAULT, updated_at: new Date().toISOString() },
+      { onConflict: "phone_number" },
+    );
+    // Fetch current times to confirm
+    const { data } = await supabase
+      .from("reminder_settings")
+      .select("morning_hour, evening_hour")
+      .eq("phone_number", from)
+      .maybeSingle() as { data: { morning_hour: number; evening_hour: number } | null };
+    const m = data?.morning_hour ?? DEFAULT.morning_hour;
+    const e = data?.evening_hour ?? DEFAULT.evening_hour;
+    return `✅ Reminders enabled! I'll check in at ${fmtHour(m)} and ${fmtHour(e)} (Lagos time) each day.\n\nTo adjust: "Remind me at 8am and 7pm"`;
+  }
+
+  if (cmd.type === "disable") {
+    await supabase.from("reminder_settings")
+      .update({ enabled: false, updated_at: new Date().toISOString() })
+      .eq("phone_number", from);
+    return '⏸️ Reminders paused. Text "Start reminders" anytime to turn them back on.';
+  }
+
+  // cmd.type === "set"
+  await supabase.from("reminder_settings").upsert(
+    {
+      phone_number: from,
+      user_id: userId || null,
+      enabled: true,
+      morning_hour: cmd.morning,
+      evening_hour: cmd.evening,
+      timezone: DEFAULT.timezone,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "phone_number" },
+  );
+  return `✅ Done! I'll remind you at ${fmtHour(cmd.morning)} and ${fmtHour(cmd.evening)} (Lagos time) each day.`;
+}
+
 // ── System instructions ───────────────────────────────────────────────────────
 
 const SYSTEM_INSTRUCTION_TEXT = `
@@ -325,6 +454,13 @@ async function runPipeline(
     return "Setup incomplete. Please create your first workspace on the web dashboard before texting Cash Bot.";
   }
 
+  // ── Step B2: Reminder command intercept ──────────────────────────────────
+  const reminderCmd = detectReminderCommand(rawText);
+  if (reminderCmd !== null) {
+    const reply = await handleReminderCommand(supabase, from, userId, reminderCmd);
+    return reply;
+  }
+
   // ── Step C: Receipt download + storage upload (image path only) ──────────
   let mediaStorageUrl: string | null = null;
   let imageBuffer: Uint8Array | null = null;
@@ -522,6 +658,20 @@ async function runPipeline(
   if (insertErr) throw new Error(`DB insert failed: ${insertErr.message}`);
 
   console.log("[pipeline] Transaction saved ✓", { projectId });
+
+  // Auto-register reminder settings on first transaction (ignoreDuplicates preserves custom settings)
+  supabase.from("reminder_settings").upsert(
+    {
+      phone_number: from,
+      user_id: userId || null,
+      enabled: true,
+      morning_hour: 9,
+      evening_hour: 18,
+      timezone: "Africa/Lagos",
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "phone_number", ignoreDuplicates: true },
+  ).then(() => {});
 
   const workspaceName = businessId
     ? (businesses?.find((b) => b.id === businessId)?.name ?? "Business")
