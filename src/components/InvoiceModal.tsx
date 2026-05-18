@@ -104,40 +104,48 @@ export default function InvoiceModal({ onClose, onSaved }: Props) {
     "w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition";
 
   return (
+    /* Overlay — bottom sheet on mobile, centered on desktop */
     <div
       ref={overlayRef}
       onClick={(e) => e.target === overlayRef.current && onClose()}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:px-4"
     >
-      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
-          <div>
-            <h2 className="text-base font-semibold text-white">Issue Invoice</h2>
-            {activeBusiness && (
-              <p className="mt-0.5 text-xs text-zinc-500">{activeBusiness.name}</p>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1 text-zinc-500 hover:text-white transition"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+      <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-zinc-800 bg-zinc-900 shadow-2xl sm:max-w-md sm:rounded-2xl">
+        {/* Drag handle (mobile) */}
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
+          <div className="h-1 w-10 rounded-full bg-zinc-700" />
         </div>
 
-        {/* Guard banner */}
-        {!activeBusiness && (
-          <div className="mx-6 mt-5 rounded-lg border border-amber-800 bg-amber-950/50 px-4 py-3 text-xs text-amber-400">
-            Switch to a business workspace to issue invoices. Personal profiles cannot raise client invoices.
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3 sm:px-6 sm:py-4">
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-zinc-800 text-zinc-400 transition hover:bg-zinc-700 hover:text-white"
+            aria-label="Go back"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-white">Issue Invoice</h2>
+            {activeBusiness && (
+              <p className="mt-0.5 truncate text-xs text-zinc-500">{activeBusiness.name}</p>
+            )}
           </div>
-        )}
+        </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
+        {/* Scrollable content */}
+        <div className="overflow-y-auto">
+          {/* Guard banner */}
+          {!activeBusiness && (
+            <div className="mx-6 mt-5 rounded-lg border border-amber-800 bg-amber-950/50 px-4 py-3 text-xs text-amber-400">
+              Switch to a business workspace to issue invoices. Personal profiles cannot raise client invoices.
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="mb-1.5 block text-xs font-medium text-zinc-400">
@@ -252,7 +260,8 @@ export default function InvoiceModal({ onClose, onSaved }: Props) {
               {saving ? "Saving…" : "Issue Invoice"}
             </button>
           </div>
-        </form>
+          </form>
+        </div>
       </div>
     </div>
   );

@@ -180,29 +180,35 @@ export default function TransactionModal({ onClose, onSaved }: Props) {
   }
 
   return (
-    /* Overlay */
+    /* Overlay — bottom sheet on mobile, centered on desktop */
     <div
       ref={overlayRef}
       onClick={(e) => e.target === overlayRef.current && onClose()}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:px-4"
     >
       {/* Panel */}
-      <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
-          <h2 className="text-base font-semibold text-white">New Transaction</h2>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1 text-zinc-500 hover:text-white transition"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+      <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-zinc-800 bg-zinc-900 shadow-2xl sm:max-w-md sm:rounded-2xl">
+        {/* Drag handle (mobile) */}
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
+          <div className="h-1 w-10 rounded-full bg-zinc-700" />
         </div>
 
-        {/* Form */}
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3 sm:px-6 sm:py-4">
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-zinc-800 text-zinc-400 transition hover:bg-zinc-700 hover:text-white"
+            aria-label="Go back"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <h2 className="flex-1 text-base font-semibold text-white">New Transaction</h2>
+        </div>
+
+        {/* Form — scrollable */}
+        <div className="overflow-y-auto">
         <form onSubmit={handleSubmit} className="space-y-5 px-6 py-5">
           {/* Type toggle */}
           <div>
@@ -437,6 +443,7 @@ export default function TransactionModal({ onClose, onSaved }: Props) {
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

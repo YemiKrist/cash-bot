@@ -354,7 +354,7 @@ function LedgerTable({ transactions, loading }: LedgerTableProps) {
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
-  const { activeBusiness } = useWorkspace();
+  const { activeBusiness, businesses, setActiveBusiness } = useWorkspace();
   const router = useRouter();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -367,6 +367,7 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [analyticsProjectId, setAnalyticsProjectId] = useState<string | null>(null);
   const [analyticsProjectName, setAnalyticsProjectName] = useState<string | null>(null);
+  const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -472,19 +473,91 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          {/* Workspace chip — taps to open sidebar */}
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800/80 px-3 py-1.5 text-xs font-medium text-zinc-300 active:bg-zinc-700 transition"
-          >
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-            <span className="max-w-[120px] truncate">
-              {analyticsProjectName ?? activeBusiness?.name ?? "Personal"}
-            </span>
-            <svg className="h-3 w-3 shrink-0 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
+          {/* Workspace chip — opens inline dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setWorkspaceDropdownOpen((o) => !o)}
+              className="flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800/80 px-3 py-1.5 text-xs font-medium text-zinc-300 active:bg-zinc-700 transition"
+            >
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+              <span className="max-w-[120px] truncate">
+                {analyticsProjectName ?? activeBusiness?.name ?? "Personal"}
+              </span>
+              <svg
+                className={`h-3 w-3 shrink-0 text-zinc-500 transition-transform ${workspaceDropdownOpen ? "rotate-180" : ""}`}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+
+            {workspaceDropdownOpen && (
+              <>
+                {/* Backdrop */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setWorkspaceDropdownOpen(false)}
+                />
+                {/* Dropdown panel */}
+                <div className="absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+                  <p className="px-3 pb-1 pt-3 text-[9px] font-bold uppercase tracking-widest text-zinc-500">
+                    Switch Workspace
+                  </p>
+                  <div className="p-1">
+                    {/* Personal Ledger */}
+                    <button
+                      onClick={() => {
+                        setActiveBusiness(null);
+                        clearProject();
+                        setWorkspaceDropdownOpen(false);
+                      }}
+                      className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                        activeBusiness === null
+                          ? "bg-emerald-950/60 text-emerald-400"
+                          : "text-zinc-300 hover:bg-zinc-800 active:bg-zinc-700"
+                      }`}
+                    >
+                      <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75}>
+                        <rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" />
+                      </svg>
+                      <span className="flex-1 truncate">Personal Ledger</span>
+                      {activeBusiness === null && (
+                        <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </button>
+                    {/* Business workspaces */}
+                    {businesses.map((b) => (
+                      <button
+                        key={b.id}
+                        onClick={() => {
+                          setActiveBusiness(b);
+                          clearProject();
+                          setWorkspaceDropdownOpen(false);
+                        }}
+                        className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                          activeBusiness?.id === b.id
+                            ? "bg-emerald-950/60 text-emerald-400"
+                            : "text-zinc-300 hover:bg-zinc-800 active:bg-zinc-700"
+                        }`}
+                      >
+                        <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75}>
+                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
+                        </svg>
+                        <span className="flex-1 truncate">{b.name}</span>
+                        {activeBusiness?.id === b.id && (
+                          <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </header>
 
         {/* ── Desktop header ───────────────────────────────────────────────── */}
