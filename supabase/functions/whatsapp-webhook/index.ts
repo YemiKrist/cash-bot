@@ -209,15 +209,39 @@ function toBase64(buffer: Uint8Array): string {
 
 // ── Gemini calls ──────────────────────────────────────────────────────────────
 
+// Retries on transient Gemini overload (503) and rate-limit (429) errors.
+// Delays: 1 s → 2 s → 4 s before giving up after 3 retries.
+async function geminiPost(
+  label: string,
+  body: unknown,
+  maxRetries = 3,
+): Promise<Response> {
+  const RETRYABLE = new Set([429, 503]);
+  let attempt = 0;
+
+  while (true) {
+    const res = await fetch(GEMINI_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok || !RETRYABLE.has(res.status) || attempt >= maxRetries) {
+      return res;
+    }
+
+    const delay = 1000 * Math.pow(2, attempt);
+    console.warn(`[${label}] Gemini ${res.status} — retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+    await new Promise((r) => setTimeout(r, delay));
+    attempt++;
+  }
+}
+
 async function extractFromText(rawText: string): Promise<ParsedTransaction> {
-  const res = await fetch(GEMINI_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_TEXT }] },
-      contents: [{ parts: [{ text: rawText }] }],
-      generationConfig: { responseMimeType: "application/json" },
-    }),
+  const res = await geminiPost("extractFromText", {
+    systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_TEXT }] },
+    contents: [{ parts: [{ text: rawText }] }],
+    generationConfig: { responseMimeType: "application/json" },
   });
 
   if (!res.ok) {
@@ -238,23 +262,17 @@ async function extractFromImage(
 ): Promise<ParsedTransaction> {
   const base64 = toBase64(imageBuffer);
 
-  const res = await fetch(GEMINI_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_RECEIPT }] },
-      contents: [
-        {
-          parts: [
-            // Inline image data chunk
-            { inlineData: { mimeType, data: base64 } },
-            // Companion text gives Gemini any extra context the user typed
-            { text: rawText || "Extract the financial details from this receipt." },
-          ],
-        },
-      ],
-      generationConfig: { responseMimeType: "application/json" },
-    }),
+  const res = await geminiPost("extractFromImage", {
+    systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_RECEIPT }] },
+    contents: [
+      {
+        parts: [
+          { inlineData: { mimeType, data: base64 } },
+          { text: rawText || "Extract the financial details from this receipt." },
+        ],
+      },
+    ],
+    generationConfig: { responseMimeType: "application/json" },
   });
 
   if (!res.ok) {
