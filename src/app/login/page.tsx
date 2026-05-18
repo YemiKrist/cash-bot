@@ -47,7 +47,8 @@ export default function LoginPage() {
         setInfo("Account created — check your email to confirm before signing in.");
       }
     } else {
-      const redirectTo = `${window.location.origin}/auth/reset-password`;
+      const base = process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin;
+      const redirectTo = `${base}/auth/reset-password`;
       const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
       if (error) {
         setError(error.message);
