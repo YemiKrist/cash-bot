@@ -624,6 +624,7 @@ async function runPipeline(
   let projectId: string | null = null;
   let resolvedProjectName: string | null = null;
   let projectLinkFailed = false;   // set when DB write succeeded but project could not be linked
+  let bizInferredFromProject = false;
 
   const rawProjectName = parsed.project_name?.trim() ?? null;
 
@@ -689,33 +690,70 @@ async function runPipeline(
     }
   } else if (!businessId && rawProjectName && rawProjectName.length > 0) {
     // No business stated — search the project name across ALL businesses.
-    // If exactly one match: infer the business. If multiple: ask for clarification.
-    const { data: crossMatches } = await supabase
+    // Step 1: exact case-insensitive match.
+    const { data: exactMatches } = await supabase
       .from("projects")
       .select("id, name, business_id")
       .ilike("name", rawProjectName) as {
         data: { id: string; name: string; business_id: string }[] | null;
       };
 
+    let crossMatches = exactMatches;
+
+    // Step 2: fuzzy fallback — strip generic suffixes ("Project", "Phase", etc.)
+    // and match on the remaining significant words.
+    if (!crossMatches?.length) {
+      const STOP = new Set(["project", "phase", "stage", "initiative", "program", "task", "job", "work", "the"]);
+      const sigWords = rawProjectName
+        .split(/\s+/)
+        .filter((w) => w.length >= 3 && !STOP.has(w.toLowerCase()));
+
+      if (sigWords.length > 0) {
+        const orFilter = sigWords.map((w) => `name.ilike.%${w}%`).join(",");
+        const { data: fuzzyMatches } = await supabase
+          .from("projects")
+          .select("id, name, business_id")
+          .or(orFilter) as {
+            data: { id: string; name: string; business_id: string }[] | null;
+          };
+        if (fuzzyMatches?.length) {
+          console.log(`[pipeline] Fuzzy project match for "${rawProjectName}":`, fuzzyMatches.map((p) => p.name));
+          crossMatches = fuzzyMatches;
+        }
+      }
+    }
+
     if (crossMatches && crossMatches.length === 1) {
       projectId = crossMatches[0].id;
       resolvedProjectName = crossMatches[0].name;
       businessId = crossMatches[0].business_id;
-      console.log(`[pipeline] Project "${resolvedProjectName}" inferred business ${businessId}`);
+      bizInferredFromProject = true;
+      console.log(`[pipeline] Project "${resolvedProjectName}" → inferred business ${businessId}`);
     } else if (crossMatches && crossMatches.length > 1) {
-      // Project exists in multiple businesses — need clarification.
-      const bizNames = crossMatches
-        .map((p) => businesses?.find((b) => b.id === p.business_id)?.name)
-        .filter(Boolean) as string[];
-      const exampleBiz = bizNames[0] ?? "My Business";
-      return [
-        `🤔 I found a project called "${rawProjectName}" in multiple businesses:`,
-        "",
-        ...bizNames.map((n) => `• ${n}`),
-        "",
-        "Please resend and specify which business:",
-        `Example: "Spent 50k on design for ${rawProjectName} — ${exampleBiz}"`,
-      ].join("\n");
+      // Deduplicate by business — only ask for clarification if truly ambiguous across businesses.
+      const uniqueBizIds = [...new Set(crossMatches.map((p) => p.business_id))];
+      if (uniqueBizIds.length === 1) {
+        // All matches are in the same business — pick the closest name.
+        const best = crossMatches[0];
+        projectId = best.id;
+        resolvedProjectName = best.name;
+        businessId = best.business_id;
+        bizInferredFromProject = true;
+        console.log(`[pipeline] Multiple matches, same business — using "${best.name}" → ${businessId}`);
+      } else {
+        const bizNames = uniqueBizIds
+          .map((id) => businesses?.find((b) => b.id === id)?.name)
+          .filter(Boolean) as string[];
+        const exampleBiz = bizNames[0] ?? "My Business";
+        return [
+          `🤔 I found "${rawProjectName}" in multiple businesses:`,
+          "",
+          ...bizNames.map((n) => `• ${n}`),
+          "",
+          "Please resend and specify which one:",
+          `Example: "Spent 50k on design for ${rawProjectName} — ${exampleBiz}"`,
+        ].join("\n");
+      }
     } else {
       console.log(`[pipeline] Project "${rawProjectName}" not found in any business — routing to Personal Ledger`);
     }
@@ -771,9 +809,21 @@ async function runPipeline(
     { onConflict: "phone_number", ignoreDuplicates: true },
   ).then(() => {});
 
-  const workspaceName = businessId
-    ? (businesses?.find((b) => b.id === businessId)?.name ?? "Business")
-    : "Personal Ledger";
+  let workspaceName: string;
+  if (!businessId) {
+    workspaceName = "Personal Ledger";
+  } else {
+    workspaceName = businesses?.find((b) => b.id === businessId)?.name ?? "";
+    if (!workspaceName) {
+      // Fallback: direct lookup (covers case where businessId was inferred from project)
+      const { data: bizRow } = await supabase
+        .from("businesses")
+        .select("name")
+        .eq("id", businessId)
+        .maybeSingle() as { data: { name: string } | null };
+      workspaceName = bizRow?.name ?? "Business";
+    }
+  }
 
   const formattedAmount = new Intl.NumberFormat("en-NG", {
     style: "currency",
@@ -786,8 +836,11 @@ async function runPipeline(
     "",
     `💰 Amount: ${formattedAmount}`,
     `🏷️ Tag: ${parsed.financial_tag}`,
-    `📁 Workspace: ${workspaceName}`,
+    `🏢 Business: ${workspaceName}`,
   ];
+  if (bizInferredFromProject) {
+    lines.push(`   ↳ Business auto-detected from project name`);
+  }
 
   if (resolvedProjectName) {
     lines.push(`📂 Project: ${resolvedProjectName}`);
