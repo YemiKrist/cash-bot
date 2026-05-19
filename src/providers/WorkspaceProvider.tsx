@@ -21,7 +21,9 @@ interface WorkspaceContextValue {
   businesses: Business[];
   activeBusiness: Business | null; // null = Personal Ledger
   setActiveBusiness: (b: Business | null) => void;
-  createBusiness: (name: string) => Promise<string | null>; // returns error message or null
+  createBusiness: (name: string) => Promise<string | null>;
+  renameBusiness: (id: string, name: string) => Promise<string | null>;
+  deleteBusiness: (id: string) => Promise<string | null>;
   loadingBusinesses: boolean;
 }
 
@@ -30,6 +32,8 @@ const WorkspaceContext = createContext<WorkspaceContextValue>({
   activeBusiness: null,
   setActiveBusiness: () => {},
   createBusiness: async () => null,
+  renameBusiness: async () => null,
+  deleteBusiness: async () => null,
   loadingBusinesses: true,
 });
 
@@ -77,6 +81,30 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     [user, fetchBusinesses]
   );
 
+  const renameBusiness = useCallback(
+    async (id: string, name: string): Promise<string | null> => {
+      const { error } = await supabase
+        .from("businesses")
+        .update({ name: name.trim() })
+        .eq("id", id);
+      if (error) return error.message;
+      await fetchBusinesses();
+      return null;
+    },
+    [fetchBusinesses]
+  );
+
+  const deleteBusiness = useCallback(
+    async (id: string): Promise<string | null> => {
+      const { error } = await supabase.from("businesses").delete().eq("id", id);
+      if (error) return error.message;
+      setActiveBusiness((prev) => (prev?.id === id ? null : prev));
+      await fetchBusinesses();
+      return null;
+    },
+    [fetchBusinesses]
+  );
+
   return (
     <WorkspaceContext.Provider
       value={{
@@ -84,6 +112,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         activeBusiness,
         setActiveBusiness,
         createBusiness,
+        renameBusiness,
+        deleteBusiness,
         loadingBusinesses,
       }}
     >
