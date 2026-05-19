@@ -293,8 +293,11 @@ exactly these fields:
                                             — AND the message contains NO explicit personal keyword
                                               (e.g. "personal", "family", "vacation", "holiday", "my wife",
                                                "kids", "school fees", "movie", "fun", "outing", "date").
+                                        ALSO add to condition (B): AND no project name was stated.
                                         Set to false when: the expense is purely personal/lifestyle with a
                                         clear personal keyword, OR a business name is explicitly stated, OR
+                                        a project name is explicitly stated (projects always belong to a
+                                        business, so naming one is sufficient routing context), OR
                                         the transaction is an inflow/revenue.
   is_valid_transaction   boolean        true if the message describes any financial transaction with a
                                         discernible monetary amount. Set to false when the message is a
@@ -570,7 +573,8 @@ async function runPipeline(
   }
 
   // ── Step E: Ambiguity intercept ───────────────────────────────────────────
-  if (parsed.is_corporate_ambiguous && !parsed.entity_prefix_guess) {
+  // Skip when a project name was stated — Step F2 will resolve the business.
+  if (parsed.is_corporate_ambiguous && !parsed.entity_prefix_guess && !parsed.project_name) {
     console.log("[pipeline] Dual-use / corporate ambiguity — requesting clarification");
 
     const businessLines = businesses?.map((b) => `• ${b.name}`).join("\n") ?? "";
