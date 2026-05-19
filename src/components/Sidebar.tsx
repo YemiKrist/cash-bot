@@ -58,38 +58,22 @@ interface SidebarProps {
   onClose: () => void;
   onProjectClick?: (projectId: string, projectName: string) => void;
   onSettingsClick?: () => void;
+  projectsRefreshKey?: number;
 }
 
-export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick }: SidebarProps) {
-  const { businesses, activeBusiness, setActiveBusiness, createBusiness, renameBusiness, deleteBusiness } =
-    useWorkspace();
+export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick, projectsRefreshKey }: SidebarProps) {
+  const { businesses, activeBusiness, setActiveBusiness, createBusiness } = useWorkspace();
 
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Business edit/delete
-  const [editingBizId, setEditingBizId] = useState<string | null>(null);
-  const [editingBizName, setEditingBizName] = useState("");
-  const [savingBiz, setSavingBiz] = useState(false);
-  const [editBizError, setEditBizError] = useState<string | null>(null);
-  const [confirmDeleteBizId, setConfirmDeleteBizId] = useState<string | null>(null);
-  const [deletingBiz, setDeletingBiz] = useState(false);
-
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [addingProject, setAddingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [savingProject, setSavingProject] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
-
-  // Project edit/delete
-  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
-  const [editingProjectName, setEditingProjectName] = useState("");
-  const [savingEditProject, setSavingEditProject] = useState(false);
-  const [editProjectError, setEditProjectError] = useState<string | null>(null);
-  const [confirmDeleteProjectId, setConfirmDeleteProjectId] = useState<string | null>(null);
-  const [deletingProject, setDeletingProject] = useState(false);
 
   useEffect(() => {
     if (!activeBusiness) {
@@ -105,7 +89,7 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
       .then(({ data }) => {
         setProjects((data as { id: string; name: string }[]) ?? []);
       });
-  }, [activeBusiness]);
+  }, [activeBusiness, projectsRefreshKey]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -114,63 +98,9 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
     setCreateError(null);
     const err = await createBusiness(newName);
     setSaving(false);
-    if (err) {
-      setCreateError(err);
-      return;
-    }
+    if (err) { setCreateError(err); return; }
     setNewName("");
     setAdding(false);
-  }
-
-  async function handleRenameBusiness(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingBizId || !editingBizName.trim()) return;
-    setSavingBiz(true);
-    setEditBizError(null);
-    const err = await renameBusiness(editingBizId, editingBizName);
-    setSavingBiz(false);
-    if (err) { setEditBizError(err); return; }
-    setEditingBizId(null);
-  }
-
-  async function handleDeleteBusiness(id: string) {
-    setDeletingBiz(true);
-    await deleteBusiness(id);
-    setDeletingBiz(false);
-    setConfirmDeleteBizId(null);
-  }
-
-  async function handleEditProject(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingProjectId || !editingProjectName.trim()) return;
-    setSavingEditProject(true);
-    setEditProjectError(null);
-    const { error } = await supabase
-      .from("projects")
-      .update({ name: editingProjectName.trim() })
-      .eq("id", editingProjectId);
-    setSavingEditProject(false);
-    if (error) { setEditProjectError(error.message); return; }
-    setEditingProjectId(null);
-    refreshProjects();
-  }
-
-  async function handleDeleteProject(id: string) {
-    setDeletingProject(true);
-    await supabase.from("projects").delete().eq("id", id);
-    setDeletingProject(false);
-    setConfirmDeleteProjectId(null);
-    refreshProjects();
-  }
-
-  async function refreshProjects() {
-    if (!activeBusiness) return;
-    const { data } = await supabase
-      .from("projects")
-      .select("id, name")
-      .eq("business_id", activeBusiness.id)
-      .order("name");
-    setProjects((data as { id: string; name: string }[]) ?? []);
   }
 
   async function handleCreateProject(e: React.FormEvent) {
@@ -183,13 +113,15 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
       .from("projects")
       .insert({ business_id: activeBusiness.id, name: trimmed });
     setSavingProject(false);
-    if (error) {
-      setProjectError(error.message);
-      return;
-    }
+    if (error) { setProjectError(error.message); return; }
     setNewProjectName("");
     setAddingProject(false);
-    refreshProjects();
+    const { data } = await supabase
+      .from("projects")
+      .select("id, name")
+      .eq("business_id", activeBusiness.id)
+      .order("name");
+    setProjects((data as { id: string; name: string }[]) ?? []);
   }
 
   return (
@@ -247,154 +179,31 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
 
           {businesses.map((b) => (
             <div key={b.id}>
-              {editingBizId === b.id ? (
-                <form onSubmit={handleRenameBusiness} className="px-1 py-0.5">
-                  <input
-                    autoFocus
-                    value={editingBizName}
-                    onChange={(e) => { setEditingBizName(e.target.value); setEditBizError(null); }}
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
-                  />
-                  {editBizError && <p className="mt-1 text-xs text-red-400">{editBizError}</p>}
-                  <div className="mt-1.5 flex gap-1.5">
-                    <button type="submit" disabled={savingBiz || !editingBizName.trim()} className="flex-1 rounded-lg bg-emerald-500 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50 transition">
-                      {savingBiz ? "…" : "Save"}
-                    </button>
-                    <button type="button" onClick={() => { setEditingBizId(null); setEditBizError(null); }} className="flex-1 rounded-lg border border-zinc-700 py-1.5 text-xs text-zinc-400 hover:text-white transition">
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              ) : confirmDeleteBizId === b.id ? (
-                <div className="flex items-center gap-1.5 rounded-lg bg-red-950/40 px-2.5 py-2">
-                  <span className="flex-1 truncate text-xs text-red-300">Delete "{b.name}"?</span>
-                  <button
-                    onClick={() => handleDeleteBusiness(b.id)}
-                    disabled={deletingBiz}
-                    className="rounded-lg bg-red-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-500 disabled:opacity-50"
-                  >
-                    {deletingBiz ? "…" : "Delete"}
-                  </button>
-                  <button onClick={() => setConfirmDeleteBizId(null)} className="rounded-lg p-1 text-zinc-500 transition hover:text-zinc-300">
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-              ) : (
-                <div className="group flex items-center rounded-lg transition hover:bg-zinc-800/60">
-                  <button
-                    onClick={() => { setActiveBusiness(b); onClose(); }}
-                    className={`flex flex-1 items-center gap-2.5 px-2.5 py-2 text-sm transition ${
-                      activeBusiness?.id === b.id ? "text-white" : "text-zinc-400 hover:text-white"
-                    }`}
-                  >
-                    <span className={activeBusiness?.id === b.id ? "text-emerald-400" : "text-zinc-500"}>
-                      <BuildingIcon />
-                    </span>
-                    <span className="truncate">{b.name}</span>
-                  </button>
-                  <div className="flex items-center gap-0.5 pr-1 opacity-0 transition group-hover:opacity-100">
-                    <button
-                      onClick={() => { setEditingBizId(b.id); setEditingBizName(b.name); setEditBizError(null); setConfirmDeleteBizId(null); }}
-                      className="rounded p-1 text-zinc-600 hover:text-zinc-300 transition"
-                      aria-label="Rename business"
-                    >
-                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => { setConfirmDeleteBizId(b.id); setEditingBizId(null); }}
-                      className="rounded p-1 text-zinc-600 hover:text-red-400 transition"
-                      aria-label="Delete business"
-                    >
-                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                        <path d="M10 11v6M14 11v6" />
-                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              )}
+              <button
+                onClick={() => { setActiveBusiness(b); onClose(); }}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition ${
+                  activeBusiness?.id === b.id
+                    ? "bg-zinc-800 text-white"
+                    : "text-zinc-400 hover:bg-zinc-800/60 hover:text-white"
+                }`}
+              >
+                <span className={activeBusiness?.id === b.id ? "text-emerald-400" : "text-zinc-500"}>
+                  <BuildingIcon />
+                </span>
+                <span className="truncate">{b.name}</span>
+              </button>
 
               {activeBusiness?.id === b.id && (
                 <div className="ml-5 mt-0.5 border-l border-zinc-800 pl-3 pb-1">
                   {projects.map((p) => (
-                    <div key={p.id}>
-                      {editingProjectId === p.id ? (
-                        <form onSubmit={handleEditProject} className="py-0.5">
-                          <input
-                            autoFocus
-                            value={editingProjectName}
-                            onChange={(e) => { setEditingProjectName(e.target.value); setEditProjectError(null); }}
-                            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-white placeholder-zinc-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
-                          />
-                          {editProjectError && <p className="mt-1 text-xs text-red-400">{editProjectError}</p>}
-                          <div className="mt-1 flex gap-1">
-                            <button type="submit" disabled={savingEditProject || !editingProjectName.trim()} className="flex-1 rounded-lg bg-emerald-500 py-1 text-[10px] font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50 transition">
-                              {savingEditProject ? "…" : "Save"}
-                            </button>
-                            <button type="button" onClick={() => { setEditingProjectId(null); setEditProjectError(null); }} className="flex-1 rounded-lg border border-zinc-700 py-1 text-[10px] text-zinc-400 hover:text-white transition">
-                              Cancel
-                            </button>
-                          </div>
-                        </form>
-                      ) : confirmDeleteProjectId === p.id ? (
-                        <div className="flex items-center gap-1 rounded-md bg-red-950/40 px-1.5 py-1.5">
-                          <span className="flex-1 truncate text-[10px] text-red-300">Delete?</span>
-                          <button
-                            onClick={() => handleDeleteProject(p.id)}
-                            disabled={deletingProject}
-                            className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-red-500 disabled:opacity-50 transition"
-                          >
-                            {deletingProject ? "…" : "Delete"}
-                          </button>
-                          <button onClick={() => setConfirmDeleteProjectId(null)} className="rounded p-0.5 text-zinc-500 hover:text-zinc-300 transition">
-                            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                            </svg>
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="group flex items-center rounded-md transition hover:bg-zinc-800/60">
-                          <button
-                            onClick={() => { onProjectClick?.(p.id, p.name); onClose(); }}
-                            className="flex flex-1 items-center gap-2 px-1.5 py-1.5 text-left text-xs text-zinc-400 hover:text-zinc-200 transition"
-                          >
-                            <span className="shrink-0 text-zinc-500"><FolderIcon /></span>
-                            <span className="truncate">{p.name}</span>
-                          </button>
-                          <div className="flex items-center gap-0.5 pr-1 opacity-0 transition group-hover:opacity-100">
-                            <button
-                              onClick={() => { setEditingProjectId(p.id); setEditingProjectName(p.name); setEditProjectError(null); setConfirmDeleteProjectId(null); }}
-                              className="rounded p-0.5 text-zinc-600 hover:text-zinc-300 transition"
-                              aria-label="Rename project"
-                            >
-                              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => { setConfirmDeleteProjectId(p.id); setEditingProjectId(null); }}
-                              className="rounded p-0.5 text-zinc-600 hover:text-red-400 transition"
-                              aria-label="Delete project"
-                            >
-                              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                                <polyline points="3 6 5 6 21 6" />
-                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                                <path d="M10 11v6M14 11v6" />
-                                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      key={p.id}
+                      onClick={() => { onProjectClick?.(p.id, p.name); onClose(); }}
+                      className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-xs text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200 transition"
+                    >
+                      <span className="shrink-0 text-zinc-500"><FolderIcon /></span>
+                      <span className="truncate">{p.name}</span>
+                    </button>
                   ))}
 
                   {addingProject ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import BusinessSettings from "@/components/BusinessSettings";
@@ -457,6 +457,241 @@ function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTablePro
   );
 }
 
+// ── Workspace manage menu (⋮ button near Add Transaction) ────────────────────
+
+type MenuMode = "idle" | "renameBiz" | "confirmDeleteBiz" | "renameProj" | "confirmDeleteProj";
+
+interface WorkspaceMenuProps {
+  activeProjectId: string | null;
+  activeProjectName: string | null;
+  onProjectRenamed: (newName: string) => void;
+  onProjectDeleted: () => void;
+  onWorkspaceMutated: () => void;
+}
+
+function WorkspaceMenu({
+  activeProjectId,
+  activeProjectName,
+  onProjectRenamed,
+  onProjectDeleted,
+  onWorkspaceMutated,
+}: WorkspaceMenuProps) {
+  const { activeBusiness, renameBusiness, deleteBusiness } = useWorkspace();
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<MenuMode>("idle");
+  const [input, setInput] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setMode("idle");
+        setError(null);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  if (!activeBusiness) return null;
+
+  function openMenu() {
+    setMode("idle");
+    setInput("");
+    setError(null);
+    setOpen((o) => !o);
+  }
+
+  async function handleRenameBiz(e: React.FormEvent) {
+    e.preventDefault();
+    if (!input.trim()) return;
+    setWorking(true);
+    setError(null);
+    const err = await renameBusiness(activeBusiness!.id, input.trim());
+    setWorking(false);
+    if (err) { setError(err); return; }
+    setOpen(false);
+    setMode("idle");
+  }
+
+  async function handleDeleteBiz() {
+    setWorking(true);
+    await deleteBusiness(activeBusiness!.id);
+    setWorking(false);
+    setOpen(false);
+    setMode("idle");
+  }
+
+  async function handleRenameProj(e: React.FormEvent) {
+    e.preventDefault();
+    if (!input.trim() || !activeProjectId) return;
+    setWorking(true);
+    setError(null);
+    const { error: err } = await supabase
+      .from("projects")
+      .update({ name: input.trim() })
+      .eq("id", activeProjectId);
+    setWorking(false);
+    if (err) { setError(err.message); return; }
+    onProjectRenamed(input.trim());
+    onWorkspaceMutated();
+    setOpen(false);
+    setMode("idle");
+  }
+
+  async function handleDeleteProj() {
+    if (!activeProjectId) return;
+    setWorking(true);
+    await supabase.from("projects").delete().eq("id", activeProjectId);
+    setWorking(false);
+    onProjectDeleted();
+    onWorkspaceMutated();
+    setOpen(false);
+    setMode("idle");
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={openMenu}
+        className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-700 text-zinc-400 transition hover:border-zinc-500 hover:text-white"
+        aria-label="Manage workspace"
+      >
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+          <circle cx="12" cy="5" r="1" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="19" r="1" fill="currentColor" stroke="none" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+          {mode === "idle" && (
+            <div className="p-1.5">
+              {activeProjectId && (
+                <>
+                  <p className="px-2.5 pb-1 pt-1.5 text-[9px] font-bold uppercase tracking-widest text-zinc-500">
+                    Project: {activeProjectName}
+                  </p>
+                  <button
+                    onClick={() => { setMode("renameProj"); setInput(activeProjectName ?? ""); setError(null); }}
+                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-zinc-300 transition hover:bg-zinc-800"
+                  >
+                    <svg className="h-3.5 w-3.5 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                    Rename Project
+                  </button>
+                  <button
+                    onClick={() => { setMode("confirmDeleteProj"); setError(null); }}
+                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-red-400 transition hover:bg-red-950/50"
+                  >
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                    Delete Project
+                  </button>
+                  <div className="my-1.5 border-t border-zinc-800" />
+                </>
+              )}
+              <p className="px-2.5 pb-1 pt-1 text-[9px] font-bold uppercase tracking-widest text-zinc-500">
+                Business: {activeBusiness.name}
+              </p>
+              <button
+                onClick={() => { setMode("renameBiz"); setInput(activeBusiness.name); setError(null); }}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-zinc-300 transition hover:bg-zinc-800"
+              >
+                <svg className="h-3.5 w-3.5 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+                Rename Business
+              </button>
+              <button
+                onClick={() => { setMode("confirmDeleteBiz"); setError(null); }}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-red-400 transition hover:bg-red-950/50"
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                </svg>
+                Delete Business
+              </button>
+            </div>
+          )}
+
+          {(mode === "renameBiz" || mode === "renameProj") && (
+            <form
+              onSubmit={mode === "renameBiz" ? handleRenameBiz : handleRenameProj}
+              className="p-3"
+            >
+              <p className="mb-2 text-xs font-semibold text-zinc-400">
+                {mode === "renameBiz" ? "Rename Business" : "Rename Project"}
+              </p>
+              <input
+                autoFocus
+                value={input}
+                onChange={(e) => { setInput(e.target.value); setError(null); }}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+              />
+              {error && <p className="mt-1.5 text-xs text-red-400">{error}</p>}
+              <div className="mt-2 flex gap-1.5">
+                <button
+                  type="submit"
+                  disabled={working || !input.trim()}
+                  className="flex-1 rounded-lg bg-emerald-500 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50 transition"
+                >
+                  {working ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMode("idle"); setError(null); }}
+                  className="flex-1 rounded-lg border border-zinc-700 py-1.5 text-xs text-zinc-400 hover:text-white transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+
+          {(mode === "confirmDeleteBiz" || mode === "confirmDeleteProj") && (
+            <div className="p-3">
+              <p className="mb-1 text-xs font-semibold text-zinc-300">
+                {mode === "confirmDeleteBiz"
+                  ? `Delete "${activeBusiness.name}"?`
+                  : `Delete "${activeProjectName}"?`}
+              </p>
+              <p className="mb-3 text-xs text-zinc-500">This can't be undone.</p>
+              {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
+              <div className="flex gap-1.5">
+                <button
+                  onClick={mode === "confirmDeleteBiz" ? handleDeleteBiz : handleDeleteProj}
+                  disabled={working}
+                  className="flex-1 rounded-lg bg-red-600 py-1.5 text-xs font-bold text-white hover:bg-red-500 disabled:opacity-50 transition"
+                >
+                  {working ? "Deleting…" : "Delete"}
+                </button>
+                <button
+                  onClick={() => { setMode("idle"); setError(null); }}
+                  className="flex-1 rounded-lg border border-zinc-700 py-1.5 text-xs text-zinc-400 hover:text-white transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -478,6 +713,7 @@ export default function DashboardPage() {
   const [analyticsProjectName, setAnalyticsProjectName] = useState<string | null>(null);
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [projectsRefreshKey, setProjectsRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -571,6 +807,7 @@ export default function DashboardPage() {
           setSidebarOpen(false);
         }}
         onSettingsClick={() => setShowSettings(true)}
+        projectsRefreshKey={projectsRefreshKey}
       />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -594,7 +831,8 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          {/* Workspace chip — opens inline dropdown */}
+          {/* Workspace chip + manage menu */}
+          <div className="flex items-center gap-1.5">
           <div className="relative">
             <button
               onClick={() => setWorkspaceDropdownOpen((o) => !o)}
@@ -679,6 +917,14 @@ export default function DashboardPage() {
               </>
             )}
           </div>
+          <WorkspaceMenu
+            activeProjectId={analyticsProjectId}
+            activeProjectName={analyticsProjectName}
+            onProjectRenamed={(name) => setAnalyticsProjectName(name)}
+            onProjectDeleted={() => { setAnalyticsProjectId(null); setAnalyticsProjectName(null); }}
+            onWorkspaceMutated={() => setProjectsRefreshKey((k) => k + 1)}
+          />
+          </div>
         </header>
 
         {/* ── Desktop header ───────────────────────────────────────────────── */}
@@ -698,6 +944,13 @@ export default function DashboardPage() {
             <WorkspaceHeading projectName={analyticsProjectName} />
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
+            <WorkspaceMenu
+              activeProjectId={analyticsProjectId}
+              activeProjectName={analyticsProjectName}
+              onProjectRenamed={(name) => setAnalyticsProjectName(name)}
+              onProjectDeleted={() => { setAnalyticsProjectId(null); setAnalyticsProjectName(null); }}
+              onWorkspaceMutated={() => setProjectsRefreshKey((k) => k + 1)}
+            />
             {activeBusiness && activeTab === "invoices" && !analyticsProjectId && (
               <button
                 onClick={() => setShowInvModal(true)}
