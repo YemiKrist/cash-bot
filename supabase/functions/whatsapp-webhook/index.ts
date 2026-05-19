@@ -198,6 +198,66 @@ async function handleReminderCommand(
   return `✅ Done! I'll remind you at ${fmtHour(cmd.morning)} and ${fmtHour(cmd.evening)} (Lagos time) each day.`;
 }
 
+// ── Cancel / undo last transaction ───────────────────────────────────────────
+
+function detectCancelCommand(text: string): boolean {
+  const t = text.trim();
+  return /^(cancel|undo|delete\s+last|cancel\s+last|cancel\s+that|undo\s+that|remove\s+last|revert\s+last)(\s+(transaction|entry|that|it))?$/i.test(t) ||
+    /\b(cancel|undo|remove|delete)\b.{0,20}\b(last|that|previous|recent)\b.{0,30}(transaction|entry|record)?\b/i.test(t);
+}
+
+async function handleCancelCommand(
+  supabase: ReturnType<typeof createClient>,
+  from: string,
+): Promise<string> {
+  const { data: tx } = await supabase
+    .from("transactions")
+    .select("id, amount, description, transaction_type, created_at")
+    .eq("phone_number", from)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle() as {
+      data: {
+        id: number;
+        amount: number;
+        description: string | null;
+        transaction_type: string;
+        created_at: string;
+      } | null;
+    };
+
+  if (!tx) {
+    return "❌ No recent transaction found to cancel. Only transactions logged via WhatsApp can be undone this way.";
+  }
+
+  const { error: delErr } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("id", tx.id);
+
+  if (delErr) {
+    console.error("[cancel] delete failed:", delErr.message);
+    return `❌ Could not cancel transaction: ${delErr.message}`;
+  }
+
+  const formatted = new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    minimumFractionDigits: 2,
+  }).format(tx.amount);
+
+  console.log(`[cancel] deleted transaction ${tx.id} for ${from}`);
+
+  return [
+    "🗑️ Transaction cancelled!",
+    "",
+    `💰 ${tx.transaction_type === "inflow" ? "+" : "-"}${formatted}`,
+    `📝 ${tx.description ?? "No description"}`,
+    "",
+    "It has been removed from your ledger.",
+  ].join("\n");
+}
+
 // ── System instructions ───────────────────────────────────────────────────────
 
 const SYSTEM_INSTRUCTION_TEXT = `
@@ -457,8 +517,12 @@ async function runPipeline(
   // ── Step B2: Reminder command intercept ──────────────────────────────────
   const reminderCmd = detectReminderCommand(rawText);
   if (reminderCmd !== null) {
-    const reply = await handleReminderCommand(supabase, from, userId, reminderCmd);
-    return reply;
+    return await handleReminderCommand(supabase, from, userId, reminderCmd);
+  }
+
+  // ── Step B3: Cancel / undo last transaction ───────────────────────────────
+  if (detectCancelCommand(rawText)) {
+    return await handleCancelCommand(supabase, from);
   }
 
   // ── Step C: Receipt download + storage upload (image path only) ──────────
