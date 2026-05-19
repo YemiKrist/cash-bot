@@ -684,7 +684,37 @@ async function runPipeline(
       }
     }
   } else if (!businessId && rawProjectName && rawProjectName.length > 0) {
-    console.log(`[pipeline] Project "${rawProjectName}" mentioned but workspace is Personal Ledger — skipping (projects require a business workspace)`);
+    // No business stated — search the project name across ALL businesses.
+    // If exactly one match: infer the business. If multiple: ask for clarification.
+    const { data: crossMatches } = await supabase
+      .from("projects")
+      .select("id, name, business_id")
+      .ilike("name", rawProjectName) as {
+        data: { id: string; name: string; business_id: string }[] | null;
+      };
+
+    if (crossMatches && crossMatches.length === 1) {
+      projectId = crossMatches[0].id;
+      resolvedProjectName = crossMatches[0].name;
+      businessId = crossMatches[0].business_id;
+      console.log(`[pipeline] Project "${resolvedProjectName}" inferred business ${businessId}`);
+    } else if (crossMatches && crossMatches.length > 1) {
+      // Project exists in multiple businesses — need clarification.
+      const bizNames = crossMatches
+        .map((p) => businesses?.find((b) => b.id === p.business_id)?.name)
+        .filter(Boolean) as string[];
+      const exampleBiz = bizNames[0] ?? "My Business";
+      return [
+        `🤔 I found a project called "${rawProjectName}" in multiple businesses:`,
+        "",
+        ...bizNames.map((n) => `• ${n}`),
+        "",
+        "Please resend and specify which business:",
+        `Example: "Spent 50k on design for ${rawProjectName} — ${exampleBiz}"`,
+      ].join("\n");
+    } else {
+      console.log(`[pipeline] Project "${rawProjectName}" not found in any business — routing to Personal Ledger`);
+    }
   }
 
   // ── Step F3: VAT settings lookup ──────────────────────────────────────────
