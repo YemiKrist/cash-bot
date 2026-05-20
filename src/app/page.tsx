@@ -56,6 +56,25 @@ function tagLabel(tag: string): string {
   return map[tag] ?? tag;
 }
 
+// ── Business avatar helpers ───────────────────────────────────────────────────
+
+const BIZ_PALETTE = [
+  "bg-violet-600", "bg-blue-600", "bg-emerald-600", "bg-amber-500",
+  "bg-rose-600",   "bg-cyan-600", "bg-orange-500",  "bg-indigo-600",
+];
+
+function bizInitials(name: string): string {
+  const words = name.trim().split(/\s+/);
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+function bizColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return BIZ_PALETTE[h % BIZ_PALETTE.length];
+}
+
 const TAG_COLORS: Record<string, string> = {
   revenue: "bg-emerald-900/50 text-emerald-400",
   cogs: "bg-amber-900/50 text-amber-400",
@@ -891,9 +910,11 @@ export default function DashboardPage() {
                           : "text-zinc-300 hover:bg-zinc-800 active:bg-zinc-700"
                       }`}
                     >
-                      <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75}>
-                        <rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" />
-                      </svg>
+                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-600 text-[10px] font-bold text-white ${
+                        activeBusiness === null ? "ring-1 ring-emerald-400 ring-offset-1 ring-offset-zinc-900" : ""
+                      }`}>
+                        PL
+                      </span>
                       <span className="flex-1 truncate">Personal Ledger</span>
                       {activeBusiness === null && (
                         <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
@@ -916,9 +937,11 @@ export default function DashboardPage() {
                             : "text-zinc-300 hover:bg-zinc-800 active:bg-zinc-700"
                         }`}
                       >
-                        <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75}>
-                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
-                        </svg>
+                        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${bizColor(b.name)} ${
+                          activeBusiness?.id === b.id ? "ring-1 ring-emerald-400 ring-offset-1 ring-offset-zinc-900" : ""
+                        }`}>
+                          {bizInitials(b.name)}
+                        </span>
                         <span className="flex-1 truncate">{b.name}</span>
                         {activeBusiness?.id === b.id && (
                           <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>

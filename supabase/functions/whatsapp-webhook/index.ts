@@ -69,6 +69,63 @@ interface VatSettings {
   tax_percentage: number;
 }
 
+interface ProjectTaxConfig {
+  enable_vat: boolean;
+  enable_wht: boolean;
+  wht_rate_percent: number;
+}
+
+interface TaxBreakdown {
+  gross_amount: number;
+  core_revenue: number;       // Excl. VAT when VAT-enabled; equals gross otherwise
+  tax_vat_amount: number;     // 0 when VAT disabled
+  tax_wht_amount: number;     // 0 when WHT disabled
+  net_amount_received: number; // Cash actually received after WHT deduction
+  vat_enabled: boolean;
+  wht_enabled: boolean;
+  wht_rate: number;
+}
+
+// ── Tax helpers ────────────────────────────────────────────────────────────────
+
+function fmtNGN(amount: number): string {
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    minimumFractionDigits: 2,
+  }).format(amount);
+}
+
+function computeTaxBreakdown(amount: number, cfg: ProjectTaxConfig): TaxBreakdown {
+  // Nigerian VAT is 7.5% (Finance Act 2019). Amount received is VAT-inclusive,
+  // so true revenue = gross / 1.075.
+  const VAT_DIVISOR = 1.075;
+  const whtRate = cfg.wht_rate_percent / 100;
+
+  const core_revenue = cfg.enable_vat ? amount / VAT_DIVISOR : amount;
+  const tax_vat_amount = cfg.enable_vat ? amount - core_revenue : 0;
+
+  // WHT: the client withholds wht_rate% before remitting. The gross bill is the
+  // full invoice amount; only (gross - WHT) is transferred to the vendor.
+  const tax_wht_amount = cfg.enable_wht ? amount * whtRate : 0;
+
+  // Net cash actually received:
+  //   VAT-only   → full amount arrives (VAT is collected and held for FIRS)
+  //   WHT (±VAT) → client deducts WHT before paying, so net = gross - WHT
+  const net_amount_received = cfg.enable_wht ? amount - tax_wht_amount : amount;
+
+  return {
+    gross_amount: amount,
+    core_revenue,
+    tax_vat_amount,
+    tax_wht_amount,
+    net_amount_received,
+    vat_enabled: cfg.enable_vat,
+    wht_enabled: cfg.enable_wht,
+    wht_rate: cfg.wht_rate_percent,
+  };
+}
+
 // ── Reminder command parser ───────────────────────────────────────────────────
 
 type ReminderCmd =
@@ -240,18 +297,12 @@ async function handleCancelCommand(
     return `❌ Could not cancel transaction: ${delErr.message}`;
   }
 
-  const formatted = new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
-    minimumFractionDigits: 2,
-  }).format(tx.amount);
-
   console.log(`[cancel] deleted transaction ${tx.id} for ${from}`);
 
   return [
     "🗑️ Transaction cancelled!",
     "",
-    `💰 ${tx.transaction_type === "inflow" ? "+" : "-"}${formatted}`,
+    `💰 ${tx.transaction_type === "inflow" ? "+" : "-"}${fmtNGN(tx.amount)}`,
     `📝 ${tx.description ?? "No description"}`,
     "",
     "It has been removed from your ledger.",
@@ -572,7 +623,13 @@ async function runPipeline(
     ].join("\n");
   }
 
-  // ── Step E: Ambiguity intercept ───────────────────────────────────────────
+  // ── Step E: Ambiguity intercept (CITA WREN enforcement) ─────────────────
+  // CITA s.27 WREN test: an outflow is deductible only when it is Wholly,
+  // Revenue-in-nature, Exclusive to the business, and Necessary. Dual-use
+  // categories — fuel, transport, data, utilities, meals — fail this test
+  // unless attributed to a specific workspace. Gemini sets
+  // is_corporate_ambiguous=true for these, and we gate them here so every
+  // ambiguous outflow gets an explicit workspace before it enters the ledger.
   // Skip when a project name was stated — Step F2 will resolve the business.
   if (parsed.is_corporate_ambiguous && !parsed.entity_prefix_guess && !parsed.project_name) {
     console.log("[pipeline] Dual-use / corporate ambiguity — requesting clarification");
@@ -759,7 +816,34 @@ async function runPipeline(
     }
   }
 
-  // ── Step F3: VAT settings lookup ──────────────────────────────────────────
+  // ── Step F2.5: Project-level tax configuration (inflows only) ───────────
+  // For inflow transactions linked to a project, fetch the project's Nigerian
+  // tax compliance flags. VAT and WHT only apply to revenue — outflows use
+  // the business-level VAT settings below (Step F3).
+  let projectTaxCfg: ProjectTaxConfig | null = null;
+
+  if (parsed.transaction_type === "inflow" && projectId) {
+    const { data: ptCfg, error: ptErr } = await supabase
+      .from("projects")
+      .select("enable_vat, enable_wht, wht_rate_percent")
+      .eq("id", projectId)
+      .maybeSingle() as { data: ProjectTaxConfig | null; error: { message: string } | null };
+
+    if (ptErr) {
+      console.error("[pipeline] Project tax config fetch failed:", ptErr.message);
+    } else if (ptCfg) {
+      projectTaxCfg = ptCfg;
+      console.log(`[pipeline] Project tax config (${projectId}):`, ptCfg);
+    }
+  }
+
+  // Compute the compliance breakdown only when at least one tax flag is on.
+  const taxBreakdown: TaxBreakdown | null =
+    projectTaxCfg && (projectTaxCfg.enable_vat || projectTaxCfg.enable_wht)
+      ? computeTaxBreakdown(parsed.amount, projectTaxCfg)
+      : null;
+
+  // ── Step F3: Business-level VAT settings (outflow deductibility) ─────────
   // Fetch once here so the confirmation reply can inform the user when their
   // expense will factor into the dashboard's Input VAT calculation.
   // Defaults apply when no settings row exists yet (new business).
@@ -825,31 +909,64 @@ async function runPipeline(
     }
   }
 
-  const formattedAmount = new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
-    minimumFractionDigits: 2,
-  }).format(parsed.amount);
-
   const lines = [
     "✅ Transaction Logged!",
     "",
-    `💰 Amount: ${formattedAmount}`,
-    `🏷️ Tag: ${parsed.financial_tag}`,
+    `💰 Amount: ${fmtNGN(parsed.amount)}`,
+    `🏷️  Tag: ${parsed.financial_tag}`,
     `🏢 Business: ${workspaceName}`,
   ];
+
   if (bizInferredFromProject) {
     lines.push(`   ↳ Business auto-detected from project name`);
   }
-
   if (resolvedProjectName) {
     lines.push(`📂 Project: ${resolvedProjectName}`);
   } else if (projectLinkFailed && rawProjectName) {
-    lines.push(`⚠️ Project: Could not link to "${rawProjectName}" — saved as Unassigned`);
+    lines.push(`⚠️  Project: Could not link to "${rawProjectName}" — saved as Unassigned`);
   }
-  lines.push(`📝 Description: ${parsed.description}`);
+  lines.push(`📝 ${parsed.description}`);
 
-  // Inform the user when this outflow will reduce their VAT liability.
+  // ── Tax compliance breakdown (project-level inflow) ───────────────────────
+  if (taxBreakdown) {
+    const { vat_enabled, wht_enabled, wht_rate } = taxBreakdown;
+
+    if (vat_enabled && !wht_enabled) {
+      // VAT-only: client pays VAT-inclusive; vendor splits and remits to FIRS.
+      lines.push(
+        "",
+        "🧾 *VAT Compliance Breakdown*",
+        `   True Revenue (ex-VAT):  ${fmtNGN(taxBreakdown.core_revenue)}`,
+        `   VAT Collected (7.5%):   ${fmtNGN(taxBreakdown.tax_vat_amount)}`,
+        `   → Remit VAT to FIRS via TaxPro-Max`,
+      );
+    } else if (wht_enabled && !vat_enabled) {
+      // WHT-only: client deducts before paying; vendor tracks credit note for TCC.
+      lines.push(
+        "",
+        "🏦 *WHT Compliance Breakdown*",
+        `   Gross Invoice Value:    ${fmtNGN(taxBreakdown.gross_amount)}`,
+        `   WHT Deducted (${wht_rate}%):  -${fmtNGN(taxBreakdown.tax_wht_amount)}`,
+        `   Cash at Hand:           ${fmtNGN(taxBreakdown.net_amount_received)}`,
+        `   WHT Credit Note:        ${fmtNGN(taxBreakdown.tax_wht_amount)}`,
+        `   → Track credit note for TCC offset at FIRS`,
+      );
+    } else if (vat_enabled && wht_enabled) {
+      // Both apply: VAT splits core revenue, then WHT is also withheld.
+      lines.push(
+        "",
+        "🧾 *Tax Compliance Breakdown*",
+        `   Gross Invoice Value:    ${fmtNGN(taxBreakdown.gross_amount)}`,
+        `   True Revenue (ex-VAT):  ${fmtNGN(taxBreakdown.core_revenue)}`,
+        `   VAT Collected (7.5%):   ${fmtNGN(taxBreakdown.tax_vat_amount)}`,
+        `   WHT Deducted (${wht_rate}%):  -${fmtNGN(taxBreakdown.tax_wht_amount)}`,
+        `   Cash at Hand:           ${fmtNGN(taxBreakdown.net_amount_received)}`,
+        `   → Remit VAT to FIRS · WHT Credit: ${fmtNGN(taxBreakdown.tax_wht_amount)}`,
+      );
+    }
+  }
+
+  // ── Input VAT note (business-level outflow deductibility) ────────────────
   // cogs and opex are the two tags the get_tax_summary RPC counts as Input VAT.
   const isInputVatEligible =
     vatSettings.has_vat &&
@@ -858,7 +975,8 @@ async function runPipeline(
 
   if (isInputVatEligible) {
     lines.push(
-      `\n🧾 ${vatSettings.tax_name} Deductible: This expense factors into your Input ${vatSettings.tax_name} on the dashboard (${vatSettings.tax_percentage}% of ₦${parsed.amount.toLocaleString("en-NG")}).`,
+      "",
+      `🧾 ${vatSettings.tax_name} Deductible: This expense reduces your Input ${vatSettings.tax_name} on the dashboard (${vatSettings.tax_percentage}% of ${fmtNGN(parsed.amount)}).`,
     );
   }
 
