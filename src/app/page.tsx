@@ -759,22 +759,29 @@ export default function DashboardPage() {
     } else {
       query = query.is("business_id", null);
     }
+    if (analyticsProjectId) {
+      query = query.eq("project_id", analyticsProjectId);
+    }
     const { data } = await query;
     setTransactions((data as Transaction[]) ?? []);
     setLoadingTx(false);
-  }, [user, activeBusiness]);
+  }, [user, activeBusiness, analyticsProjectId]);
 
   const fetchInvoices = useCallback(async () => {
     if (!activeBusiness) return;
     setLoadingInv(true);
-    const { data } = await supabase
+    let invQuery = supabase
       .from("invoices")
       .select("id, business_id, invoice_number, client_name, project_id, project:projects(name), total_amount, due_date, status")
       .eq("business_id", activeBusiness.id)
       .order("due_date", { ascending: true });
+    if (analyticsProjectId) {
+      invQuery = invQuery.eq("project_id", analyticsProjectId);
+    }
+    const { data } = await invQuery;
     setInvoices((data as unknown as Invoice[]) ?? []);
     setLoadingInv(false);
-  }, [activeBusiness]);
+  }, [activeBusiness, analyticsProjectId]);
 
   useEffect(() => { fetchTransactions(); }, [fetchTransactions]);
   useEffect(() => {
@@ -978,7 +985,7 @@ export default function DashboardPage() {
               onProjectDeleted={() => { setAnalyticsProjectId(null); setAnalyticsProjectName(null); }}
               onWorkspaceMutated={() => setProjectsRefreshKey((k) => k + 1)}
               />
-            {activeBusiness && activeTab === "invoices" && !analyticsProjectId && (
+            {activeBusiness && activeTab === "invoices" && (
               <button
                 onClick={() => setShowInvModal(true)}
                 className="flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:border-zinc-500 hover:text-white transition"
@@ -998,14 +1005,12 @@ export default function DashboardPage() {
         </header>
 
         {/* ── Summary strips ───────────────────────────────────────────────── */}
-        {!analyticsProjectId && (
+        {activeTab !== "analytics" && (
           <>
             {/* Mobile 3-number bar */}
-            {activeTab !== "analytics" && (
-              <div className="lg:hidden">
-                <MobileSummaryBar transactions={transactions} />
-              </div>
-            )}
+            <div className="lg:hidden">
+              <MobileSummaryBar transactions={transactions} />
+            </div>
             {/* Desktop full KPI grid */}
             <div className="hidden lg:block">
               <AnalyticsSummary transactions={transactions} />
@@ -1014,7 +1019,7 @@ export default function DashboardPage() {
         )}
 
         {/* ── Desktop tabs ─────────────────────────────────────────────────── */}
-        {activeBusiness && !analyticsProjectId && (
+        {activeBusiness && (
           <div className="hidden overflow-x-auto border-b border-zinc-800 px-8 lg:flex">
             {(["transactions", "invoices", "analytics"] as Tab[]).map((tab) => (
               <button
@@ -1035,16 +1040,7 @@ export default function DashboardPage() {
 
         {/* ── Content ──────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto px-4 py-4 pb-28 lg:px-8 lg:py-6 lg:pb-6">
-          {analyticsProjectId ? (
-            <AnalyticsDashboard
-              projectId={analyticsProjectId}
-              onProjectChange={(id, name) => {
-                setAnalyticsProjectId(id);
-                setAnalyticsProjectName(name);
-              }}
-              onSettingsClick={() => setShowSettings(true)}
-            />
-          ) : !activeBusiness || activeTab === "transactions" ? (
+          {!activeBusiness || activeTab === "transactions" ? (
             <>
               {/* Mobile card list */}
               <div className="space-y-2 lg:hidden">
@@ -1078,7 +1074,7 @@ export default function DashboardPage() {
             <InvoiceList invoices={invoices} loading={loadingInv} onEdit={setEditingInv} onDelete={handleDeleteInv} />
           ) : (
             <AnalyticsDashboard
-              projectId={null}
+              projectId={analyticsProjectId}
               onProjectChange={(id, name) => {
                 setAnalyticsProjectId(id);
                 setAnalyticsProjectName(name);
@@ -1094,14 +1090,14 @@ export default function DashboardPage() {
             <MobileNavTab
               icon={<IconTransactions />}
               label="Ledger"
-              active={!analyticsProjectId && activeTab === "transactions"}
-              onClick={() => { setActiveTab("transactions"); clearProject(); }}
+              active={activeTab === "transactions"}
+              onClick={() => setActiveTab("transactions")}
             />
             <MobileNavTab
               icon={<IconInvoices />}
               label="Bills"
-              active={!analyticsProjectId && activeTab === "invoices"}
-              onClick={() => { if (activeBusiness) { setActiveTab("invoices"); clearProject(); } }}
+              active={activeTab === "invoices"}
+              onClick={() => { if (activeBusiness) setActiveTab("invoices"); }}
               disabled={!activeBusiness}
             />
 
@@ -1123,8 +1119,8 @@ export default function DashboardPage() {
             <MobileNavTab
               icon={<IconAnalytics />}
               label="Analytics"
-              active={activeTab === "analytics" || !!analyticsProjectId}
-              onClick={() => { if (activeBusiness) { setActiveTab("analytics"); clearProject(); } }}
+              active={activeTab === "analytics"}
+              onClick={() => { if (activeBusiness) setActiveTab("analytics"); }}
               disabled={!activeBusiness}
             />
             <MobileNavTab
