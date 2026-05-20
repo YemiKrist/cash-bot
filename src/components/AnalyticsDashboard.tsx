@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "@/providers/WorkspaceProvider";
+import { supabase } from "@/lib/supabase";
 import {
   useAnalytics,
   useProjectAnalytics,
@@ -626,6 +627,61 @@ function ProjectBreakdown({
   );
 }
 
+// ── Inline project tax form helpers ───────────────────────────────────────────
+
+const WHT_RATE_OPTIONS = [
+  { value: "5",  label: "5% — Standard Contracts, Construction, Digital Infrastructures" },
+  { value: "10", label: "10% — Professional Fees, Consulting, Agency Retainers" },
+] as const;
+
+function TaxToggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`relative ml-4 h-6 w-11 shrink-0 rounded-full transition-colors ${
+        checked ? "bg-emerald-500" : "bg-neutral-700"
+      }`}
+      aria-checked={checked}
+      role="switch"
+    >
+      <span
+        className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+          checked ? "translate-x-5" : "translate-x-0"
+        }`}
+      />
+    </button>
+  );
+}
+
+function TaxToggleRow({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-2xl border border-neutral-800 bg-neutral-900/40 px-4 py-4">
+      <div>
+        <p className="text-sm font-medium text-neutral-200">{label}</p>
+        <p className="mt-0.5 text-xs text-neutral-500">{description}</p>
+      </div>
+      <TaxToggle checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface AnalyticsDashboardProps {
@@ -645,6 +701,16 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
   const selectedProjectName = projectId
     ? (projectOptions.find((p) => p.id === projectId)?.name ?? null)
     : null;
+
+  const [taxForm, setTaxForm] = useState<{
+    trackVat: boolean;
+    trackWht: boolean;
+    whtRate: "5" | "10";
+  } | null>(null);
+  const [taxFormLoading, setTaxFormLoading] = useState(false);
+  const [taxFormSaving,  setTaxFormSaving]  = useState(false);
+  const [taxFormError,   setTaxFormError]   = useState<string | null>(null);
+  const [taxFormSaveOk,  setTaxFormSaveOk]  = useState(false);
 
   const totals = useMemo(() => {
     const inflow  = data.reduce((s, r) => s + r.total_inflow,  0);
@@ -684,6 +750,56 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
         pct: ((amount / totalOut) * 100).toFixed(1),
       }));
   }, [data, totals.outflow]);
+
+  useEffect(() => {
+    if (!projectId) { setTaxForm(null); return; }
+    setTaxForm(null);
+    setTaxFormLoading(true);
+    async function loadTax() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? "";
+      const res = await fetch(`/api/projects/${projectId}/tax`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const d = await res.json() as { track_vat: boolean; track_wht: boolean; wht_rate_percent: number };
+        setTaxForm({
+          trackVat: d.track_vat ?? false,
+          trackWht: d.track_wht ?? false,
+          whtRate:  (d.wht_rate_percent ?? 5) >= 7.5 ? "10" : "5",
+        });
+      }
+      setTaxFormLoading(false);
+    }
+    loadTax();
+  }, [projectId]);
+
+  async function handleTaxSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!taxForm || !projectId) return;
+    setTaxFormError(null);
+    setTaxFormSaveOk(false);
+    setTaxFormSaving(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token ?? "";
+    const res = await fetch(`/api/projects/${projectId}/tax`, {
+      method:  "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        track_vat:        taxForm.trackVat,
+        track_wht:        taxForm.trackWht,
+        wht_rate_percent: parseFloat(taxForm.whtRate),
+      }),
+    });
+    setTaxFormSaving(false);
+    if (!res.ok) {
+      const json = await res.json() as { error?: string };
+      setTaxFormError(json.error ?? "Save failed.");
+      return;
+    }
+    setTaxFormSaveOk(true);
+    setTimeout(() => setTaxFormSaveOk(false), 2500);
+  }
 
   const workspaceName = activeBusiness?.name ?? "Personal Ledger";
 
@@ -836,6 +952,111 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
           sub={`Across ${data.length} week${data.length !== 1 ? "s" : ""}${selectedProjectName ? ` · ${selectedProjectName}` : ""}`}
         />
       </div>
+
+      {/* Contract Billing & Compliance — inline when project is selected */}
+      {projectId && (
+        <div className="rounded-2xl border border-neutral-800 bg-zinc-900">
+          <div className="flex items-start justify-between border-b border-neutral-800 px-6 py-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">
+                Contract Billing &amp; Compliance
+              </p>
+              <p className="mt-0.5 text-xs text-neutral-600">
+                Configure tax rules specifically for this project contract.
+              </p>
+            </div>
+            {selectedProjectName && (
+              <span className="ml-4 mt-0.5 shrink-0 rounded-full bg-zinc-800 px-2.5 py-0.5 text-[11px] font-medium text-zinc-400">
+                {selectedProjectName}
+              </span>
+            )}
+          </div>
+
+          {taxFormLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <span className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-700 border-t-emerald-500" />
+            </div>
+          ) : taxForm ? (
+            <form onSubmit={handleTaxSave} className="space-y-4 px-6 py-5">
+              <TaxToggleRow
+                label="Track 7.5% VAT for this Project Invoice"
+                description="Splits output VAT from each inflow so you can remit to FIRS via TaxPro-Max."
+                checked={taxForm.trackVat}
+                onChange={(v) => setTaxForm((f) => f ? { ...f, trackVat: v } : f)}
+              />
+              {taxForm.trackVat && (
+                <div className="rounded-xl border border-blue-900/50 bg-blue-950/30 px-4 py-3 text-xs leading-relaxed text-blue-300">
+                  <span className="font-semibold">How it works: </span>
+                  Each inflow is treated as VAT-inclusive. True revenue = gross ÷ 1.075.
+                  The extracted VAT appears as an output liability on your analytics dashboard.
+                </div>
+              )}
+
+              <TaxToggleRow
+                label="Track Withholding Tax (WHT)"
+                description="Client deducts WHT before paying. Track credit notes for FIRS TCC clearance."
+                checked={taxForm.trackWht}
+                onChange={(v) => setTaxForm((f) => f ? { ...f, trackWht: v } : f)}
+              />
+              {taxForm.trackWht && (
+                <div className="space-y-2 pl-1">
+                  <label className="block text-xs font-medium text-neutral-400">WHT Rate</label>
+                  <div className="relative">
+                    <select
+                      value={taxForm.whtRate}
+                      onChange={(e) =>
+                        setTaxForm((f) => f ? { ...f, whtRate: e.target.value as "5" | "10" } : f)
+                      }
+                      className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                    >
+                      {WHT_RATE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                    <svg
+                      className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400"
+                      viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </div>
+                </div>
+              )}
+
+              {taxForm.trackVat && taxForm.trackWht && (
+                <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 px-4 py-3 text-xs leading-relaxed text-amber-300">
+                  <span className="font-semibold">Both VAT &amp; WHT active: </span>
+                  VAT splits true revenue from the tax collected.
+                  WHT is separately withheld by the client before payment.
+                  Both breakdowns appear in your WhatsApp confirmation.
+                </div>
+              )}
+
+              {taxFormError && (
+                <p className="rounded-xl border border-red-800 bg-red-950/60 px-4 py-3 text-xs text-red-400">
+                  {taxFormError}
+                </p>
+              )}
+              {taxFormSaveOk && (
+                <p className="rounded-xl border border-emerald-800 bg-emerald-950/60 px-4 py-3 text-xs text-emerald-400">
+                  Settings saved successfully.
+                </p>
+              )}
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="submit"
+                  disabled={taxFormSaving}
+                  className="rounded-xl bg-emerald-500 px-6 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {taxFormSaving ? "Saving…" : "Save Settings"}
+                </button>
+              </div>
+            </form>
+          ) : null}
+        </div>
+      )}
 
       {/* Tax liability card */}
       <TaxLiabilityCard tax={taxData} loading={taxLoading} onConfigure={onSettingsClick} />

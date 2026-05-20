@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import BusinessSettings from "@/components/BusinessSettings";
-import ProjectSettings from "@/components/ProjectSettings";
 import TransactionModal from "@/components/TransactionModal";
 import InvoiceModal from "@/components/InvoiceModal";
 import InvoiceList from "@/components/InvoiceList";
@@ -487,7 +486,6 @@ interface WorkspaceMenuProps {
   onProjectRenamed: (newName: string) => void;
   onProjectDeleted: () => void;
   onWorkspaceMutated: () => void;
-  onProjectTaxSettings?: () => void;
 }
 
 function WorkspaceMenu({
@@ -496,7 +494,6 @@ function WorkspaceMenu({
   onProjectRenamed,
   onProjectDeleted,
   onWorkspaceMutated,
-  onProjectTaxSettings,
 }: WorkspaceMenuProps) {
   const { activeBusiness, renameBusiness, deleteBusiness } = useWorkspace();
   const [open, setOpen] = useState(false);
@@ -619,17 +616,6 @@ function WorkspaceMenu({
                     </svg>
                     Delete Project
                   </button>
-                  {onProjectTaxSettings && (
-                    <button
-                      onClick={() => { setOpen(false); onProjectTaxSettings(); }}
-                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-zinc-300 transition hover:bg-zinc-800"
-                    >
-                      <svg className="h-3.5 w-3.5 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <path d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                      </svg>
-                      Tax &amp; Compliance
-                    </button>
-                  )}
                   <div className="my-1.5 border-t border-zinc-800" />
                 </>
               )}
@@ -746,7 +732,6 @@ export default function DashboardPage() {
   const [analyticsProjectName, setAnalyticsProjectName] = useState<string | null>(null);
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showProjectSettings, setShowProjectSettings] = useState(false);
   const [projectsRefreshKey, setProjectsRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -842,6 +827,7 @@ export default function DashboardPage() {
         }}
         onSettingsClick={() => setShowSettings(true)}
         projectsRefreshKey={projectsRefreshKey}
+        activeProjectId={analyticsProjectId}
       />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -961,7 +947,6 @@ export default function DashboardPage() {
             onProjectRenamed={(name) => setAnalyticsProjectName(name)}
             onProjectDeleted={() => { setAnalyticsProjectId(null); setAnalyticsProjectName(null); }}
             onWorkspaceMutated={() => setProjectsRefreshKey((k) => k + 1)}
-            onProjectTaxSettings={analyticsProjectId ? () => setShowProjectSettings(true) : undefined}
           />
           </div>
         </header>
@@ -989,8 +974,7 @@ export default function DashboardPage() {
               onProjectRenamed={(name) => setAnalyticsProjectName(name)}
               onProjectDeleted={() => { setAnalyticsProjectId(null); setAnalyticsProjectName(null); }}
               onWorkspaceMutated={() => setProjectsRefreshKey((k) => k + 1)}
-              onProjectTaxSettings={analyticsProjectId ? () => setShowProjectSettings(true) : undefined}
-            />
+              />
             {activeBusiness && activeTab === "invoices" && !analyticsProjectId && (
               <button
                 onClick={() => setShowInvModal(true)}
@@ -1169,13 +1153,6 @@ export default function DashboardPage() {
       )}
       {showSettings && (
         <BusinessSettings onClose={() => setShowSettings(false)} />
-      )}
-      {showProjectSettings && analyticsProjectId && analyticsProjectName && (
-        <ProjectSettings
-          projectId={analyticsProjectId}
-          projectName={analyticsProjectName}
-          onClose={() => setShowProjectSettings(false)}
-        />
       )}
     </div>
   );

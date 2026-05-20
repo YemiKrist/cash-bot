@@ -189,7 +189,7 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
                     Tax &amp; Compliance
                   </p>
                   <p className="text-xs text-neutral-600">
-                    Rules applied to inflow transactions logged against this project contract.
+                    Configure tax rules specifically for this project contract.
                   </p>
                 </div>
 

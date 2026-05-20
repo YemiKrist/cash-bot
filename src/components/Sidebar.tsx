@@ -61,9 +61,10 @@ interface SidebarProps {
   onProjectClick?: (projectId: string, projectName: string) => void;
   onSettingsClick?: () => void;
   projectsRefreshKey?: number;
+  activeProjectId?: string | null;
 }
 
-export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick, projectsRefreshKey }: SidebarProps) {
+export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick, projectsRefreshKey, activeProjectId }: SidebarProps) {
   const { businesses, activeBusiness, setActiveBusiness, createBusiness } = useWorkspace();
 
   const [adding, setAdding] = useState(false);
@@ -186,13 +187,13 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
               <button
                 onClick={() => { setActiveBusiness(b); onClose(); }}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition ${
-                  activeBusiness?.id === b.id
+                  activeBusiness?.id === b.id && !activeProjectId
                     ? "bg-zinc-800 text-white"
                     : "text-zinc-400 hover:bg-zinc-800/60 hover:text-white"
                 }`}
               >
                 <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${bizColor(b.name)} ${
-                  activeBusiness?.id === b.id ? "ring-1 ring-emerald-400 ring-offset-1 ring-offset-zinc-900" : ""
+                  activeBusiness?.id === b.id && !activeProjectId ? "ring-1 ring-emerald-400 ring-offset-1 ring-offset-zinc-900" : ""
                 }`}>
                   {bizInitials(b.name)}
                 </span>
@@ -205,7 +206,11 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
                     <button
                       key={p.id}
                       onClick={() => { onProjectClick?.(p.id, p.name); onClose(); }}
-                      className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-xs text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200 transition"
+                      className={`flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-xs transition ${
+                        p.id === activeProjectId
+                          ? "bg-zinc-800/60 text-zinc-200 font-medium"
+                          : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+                      }`}
                     >
                       <span className="shrink-0 text-zinc-500"><FolderIcon /></span>
                       <span className="truncate">{p.name}</span>
