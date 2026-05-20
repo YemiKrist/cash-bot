@@ -8,7 +8,7 @@ import {
   useProjects,
   useTaxSummary,
 } from "@/hooks/useAnalytics";
-import { Amt } from "@/components/Amt";
+import { Amt, NairaSign } from "@/components/Amt";
 import type { WeeklySummaryRow, ProjectSummaryRow, TaxSummary } from "@/lib/types";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ function SummaryCard({ label, value, change, positive, sub }: SummaryCardProps) 
     <div className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{label}</p>
       <p className={`mt-3 text-2xl font-bold leading-none ${valueColor}`}>
-        <span className="font-mono">{value}</span>
+        <span className="font-sans">{value}</span>
       </p>
       <div className="mt-2">
         {change != null ? (
@@ -424,7 +424,7 @@ function TaxLiabilityCard({
       {/* Main figure */}
       <div className="mt-4">
         <p className={`text-3xl font-bold leading-none ${isOwed ? "text-amber-400" : "text-emerald-400"}`}>
-          {net_liability < 0 && <span className="font-mono">−</span>}
+          {net_liability < 0 && <span className="font-sans">−</span>}
           <Amt value={fmt(Math.abs(net_liability))} />
         </p>
         <p className="mt-1.5 text-xs text-zinc-500">
@@ -454,7 +454,7 @@ function TaxLiabilityCard({
           <div className="flex items-center justify-between text-xs">
             <span className="text-zinc-500">
               Output VAT
-              <span className="ml-1 text-zinc-700">(invoiced ₦{(taxable_revenue / 1000).toFixed(0)}K × {vat_rate}%)</span>
+              <span className="ml-1 text-zinc-700">(invoiced <NairaSign />{(taxable_revenue / 1000).toFixed(0)}K × {vat_rate}%)</span>
             </span>
             <span className="font-semibold text-amber-400">
               +<Amt value={fmt(output_vat)} />
@@ -463,7 +463,7 @@ function TaxLiabilityCard({
           <div className="flex items-center justify-between text-xs">
             <span className="text-zinc-500">
               Input VAT
-              <span className="ml-1 text-zinc-700">(expenses ₦{(taxable_expenses / 1000).toFixed(0)}K × {vat_rate}%)</span>
+              <span className="ml-1 text-zinc-700">(expenses <NairaSign />{(taxable_expenses / 1000).toFixed(0)}K × {vat_rate}%)</span>
             </span>
             <span className="font-semibold text-emerald-400">
               −<Amt value={fmt(input_vat)} />
@@ -473,7 +473,7 @@ function TaxLiabilityCard({
             <div className="flex items-center justify-between text-xs font-semibold">
               <span className="text-zinc-300">Net Liability</span>
               <span className={isOwed ? "text-amber-400" : "text-emerald-400"}>
-                {net_liability < 0 && <span className="font-mono">−</span>}
+                {net_liability < 0 && <span className="font-sans">−</span>}
                 <Amt value={fmt(Math.abs(net_liability))} />
               </span>
             </div>
@@ -601,12 +601,12 @@ function ProjectBreakdown({
                   <Amt value={fmt(p.total_inflow)} />
                 </td>
                 <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${isUnassigned ? "text-zinc-400" : "text-red-400"}`}>
-                  {p.total_outflow > 0 ? <><span className="font-mono">−</span><Amt value={fmt(p.total_outflow)} /></> : "—"}
+                  {p.total_outflow > 0 ? <><span className="font-sans">−</span><Amt value={fmt(p.total_outflow)} /></> : "—"}
                 </td>
                 <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${
                   isUnassigned ? "text-zinc-400" : p.net_balance >= 0 ? "text-emerald-400" : "text-red-400"
                 }`}>
-                  {p.net_balance < 0 && <span className="font-mono">−</span>}
+                  {p.net_balance < 0 && <span className="font-sans">−</span>}
                   <Amt value={fmt(Math.abs(p.net_balance))} />
                 </td>
                 <td className="whitespace-nowrap px-5 py-4 text-right text-zinc-400">{p.invoice_count}</td>
@@ -818,9 +818,9 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
                   <tr key={row.week_start} className="hover:bg-zinc-800/40 transition">
                     <td className="whitespace-nowrap px-5 py-4 text-zinc-400">{fmtDate(row.week_start)}</td>
                     <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-emerald-400"><Amt value={fmt(row.total_inflow)} /></td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-red-400"><span className="font-mono">−</span><Amt value={fmt(row.total_outflow)} /></td>
+                    <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-red-400"><span className="font-sans">−</span><Amt value={fmt(row.total_outflow)} /></td>
                     <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${row.net_balance >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {row.net_balance < 0 && <span className="font-mono">−</span>}<Amt value={fmt(Math.abs(row.net_balance))} />
+                      {row.net_balance < 0 && <span className="font-sans">−</span>}<Amt value={fmt(Math.abs(row.net_balance))} />
                     </td>
                   </tr>
                 ))}

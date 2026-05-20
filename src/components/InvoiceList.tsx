@@ -103,7 +103,7 @@ export default function InvoiceList({ invoices, loading, onEdit, onDelete }: Pro
 
             return (
               <tr key={inv.id} className="group hover:bg-zinc-800/40 transition">
-                <td className="whitespace-nowrap px-5 py-4 font-mono text-xs text-zinc-300">
+                <td className="whitespace-nowrap px-5 py-4 font-sans text-xs text-zinc-300">
                   {inv.invoice_number}
                 </td>
                 <td className="max-w-[160px] truncate px-5 py-4 font-medium text-zinc-200">

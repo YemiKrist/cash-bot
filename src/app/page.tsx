@@ -173,7 +173,7 @@ function MobileSummaryBar({ transactions }: { transactions: Transaction[] }) {
       <div className="flex flex-1 flex-col items-center px-2 py-3">
         <p className="text-[8px] font-bold uppercase tracking-widest text-zinc-500">Net</p>
         <p className={`mt-1 text-sm font-bold ${net >= 0 ? "text-white" : "text-red-400"}`}>
-          {net < 0 && <span className="font-mono text-xs">−</span>}
+          {net < 0 && <span className="font-sans text-xs">−</span>}
           <Amt value={formatCompact(Math.abs(net))} />
         </p>
       </div>
@@ -233,7 +233,7 @@ function TransactionCard({
 
       <div className="flex shrink-0 items-center gap-1.5">
         <div className={`text-right text-sm font-semibold ${isInflow ? "text-emerald-400" : "text-red-400"}`}>
-          {!isInflow && <span className="font-mono text-xs">−</span>}
+          {!isInflow && <span className="font-sans text-xs">−</span>}
           <Amt value={formatCurrency(tx.amount)} />
         </div>
         {onEdit && (
@@ -397,7 +397,7 @@ function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTablePro
                   tx.transaction_type === "inflow" ? "text-emerald-400" : "text-red-400"
                 }`}
               >
-                {tx.transaction_type === "outflow" && <span className="font-mono">−</span>}
+                {tx.transaction_type === "outflow" && <span className="font-sans">−</span>}
                 <Amt value={formatCurrency(tx.amount)} />
               </td>
               <td className="px-3 py-4">
