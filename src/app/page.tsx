@@ -308,7 +308,13 @@ function TransactionCard({
 
 // ── Desktop workspace heading ─────────────────────────────────────────────────
 
-function WorkspaceHeading({ projectName }: { projectName: string | null }) {
+function WorkspaceHeading({
+  projectName,
+  onBusinessClick,
+}: {
+  projectName: string | null;
+  onBusinessClick?: () => void;
+}) {
   const { activeBusiness } = useWorkspace();
   return (
     <div className="min-w-0">
@@ -319,7 +325,13 @@ function WorkspaceHeading({ projectName }: { projectName: string | null }) {
         {projectName ? (
           <>
             {projectName}
-            <span className="text-xl font-normal text-zinc-500"> — {activeBusiness?.name}</span>
+            <button
+              type="button"
+              onClick={onBusinessClick}
+              className="text-xl font-normal text-zinc-500 transition hover:text-zinc-300 hover:underline underline-offset-2"
+            >
+              {" "}— {activeBusiness?.name}
+            </button>
           </>
         ) : (
           activeBusiness ? activeBusiness.name : "Personal Ledger"
@@ -856,9 +868,23 @@ export default function DashboardPage() {
                 <line x1="3" y1="18" x2="21" y2="18" />
               </svg>
             </button>
-            <span className="text-base font-bold tracking-tight text-white">
-              Cash<span className="text-emerald-400">Bot</span>
-            </span>
+            {analyticsProjectId && activeBusiness ? (
+              <button
+                type="button"
+                onClick={clearProject}
+                className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-sm font-medium text-zinc-400 transition active:bg-zinc-800 hover:text-zinc-200"
+                aria-label={`Back to ${activeBusiness.name}`}
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+                <span className="max-w-[120px] truncate">{activeBusiness.name}</span>
+              </button>
+            ) : (
+              <span className="text-base font-bold tracking-tight text-white">
+                Cash<span className="text-emerald-400">Bot</span>
+              </span>
+            )}
           </div>
 
           {/* Workspace chip + manage menu */}
@@ -975,7 +1001,7 @@ export default function DashboardPage() {
                 <line x1="3" y1="18" x2="21" y2="18" />
               </svg>
             </button>
-            <WorkspaceHeading projectName={analyticsProjectName} />
+            <WorkspaceHeading projectName={analyticsProjectName} onBusinessClick={clearProject} />
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
             <WorkspaceMenu
