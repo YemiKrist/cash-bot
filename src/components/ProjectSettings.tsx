@@ -1,0 +1,261 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { supabase } from "@/lib/supabase";
+
+interface Props {
+  projectId: string;
+  projectName: string;
+  onClose: () => void;
+}
+
+export default function ProjectSettings({ projectId, projectName, onClose }: Props) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  const [enableVat, setEnableVat] = useState(false);
+  const [enableWht, setEnableWht] = useState(false);
+  const [whtRate,   setWhtRate]   = useState("5.0");
+  const [loading,   setLoading]   = useState(true);
+  const [saving,    setSaving]    = useState(false);
+  const [error,     setError]     = useState<string | null>(null);
+  const [saveOk,    setSaveOk]    = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? "";
+
+      const res = await fetch(`/api/projects/${projectId}/tax`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const d = await res.json() as {
+          enable_vat: boolean;
+          enable_wht: boolean;
+          wht_rate_percent: number;
+        };
+        setEnableVat(d.enable_vat ?? false);
+        setEnableWht(d.enable_wht ?? false);
+        setWhtRate(String(d.wht_rate_percent ?? 5.0));
+      }
+      setLoading(false);
+    }
+    load();
+  }, [projectId]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaveOk(false);
+
+    const rate = parseFloat(whtRate);
+    if (isNaN(rate) || rate < 0 || rate > 100) {
+      setError("WHT rate must be between 0 and 100.");
+      return;
+    }
+
+    setSaving(true);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token ?? "";
+
+    const res = await fetch(`/api/projects/${projectId}/tax`, {
+      method:  "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization:  `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        enable_vat:       enableVat,
+        enable_wht:       enableWht,
+        wht_rate_percent: rate,
+      }),
+    });
+
+    setSaving(false);
+
+    if (!res.ok) {
+      const json = await res.json() as { error?: string };
+      setError(json.error ?? "Save failed.");
+      return;
+    }
+
+    setSaveOk(true);
+    setTimeout(() => setSaveOk(false), 2500);
+  }
+
+  const fieldCls =
+    "w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition disabled:opacity-50";
+
+  return (
+    <div
+      ref={overlayRef}
+      onClick={(e) => e.target === overlayRef.current && onClose()}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:px-4"
+    >
+      <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-zinc-800 bg-zinc-900 shadow-2xl sm:max-w-md sm:rounded-2xl">
+        {/* Drag handle (mobile) */}
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
+          <div className="h-1 w-10 rounded-full bg-zinc-700" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3 sm:px-6 sm:py-4">
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-zinc-800 text-zinc-400 transition hover:bg-zinc-700 hover:text-white"
+            aria-label="Close"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-white">Project Settings</h2>
+            <p className="mt-0.5 truncate text-xs text-zinc-500">{projectName}</p>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <span className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-emerald-500" />
+            </div>
+          ) : (
+            <form onSubmit={handleSave} className="space-y-6 px-6 py-6">
+
+              {/* ── Tax & Compliance ──────────────────────────────────────── */}
+              <div>
+                <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                  Tax &amp; Compliance
+                </p>
+
+                {/* VAT toggle */}
+                <div className="flex items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-800/40 px-4 py-4">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-200">Apply 7.5% VAT</p>
+                    <p className="mt-0.5 text-xs text-zinc-500">
+                      Include VAT on revenue for this project's tax estimate.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEnableVat((v) => !v)}
+                    className={`relative ml-4 h-6 w-11 shrink-0 rounded-full transition-colors ${
+                      enableVat ? "bg-emerald-500" : "bg-zinc-700"
+                    }`}
+                    aria-checked={enableVat}
+                    role="switch"
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                        enableVat ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* WHT toggle */}
+                <div className="mt-3 flex items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-800/40 px-4 py-4">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-200">Apply Withholding Tax (WHT)</p>
+                    <p className="mt-0.5 text-xs text-zinc-500">
+                      Track WHT deducted from payments received on this project.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEnableWht((v) => !v)}
+                    className={`relative ml-4 h-6 w-11 shrink-0 rounded-full transition-colors ${
+                      enableWht ? "bg-emerald-500" : "bg-zinc-700"
+                    }`}
+                    aria-checked={enableWht}
+                    role="switch"
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                        enableWht ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* WHT rate — visible only when WHT is on */}
+                {enableWht && (
+                  <div className="mt-3">
+                    <label className="mb-1.5 block text-xs font-medium text-zinc-400">
+                      WHT Rate (%)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={whtRate}
+                      onChange={(e) => setWhtRate(e.target.value)}
+                      placeholder="5.0"
+                      className={fieldCls}
+                    />
+                    <div className="mt-3 rounded-xl border border-blue-900/50 bg-blue-950/30 px-4 py-3 text-xs leading-relaxed text-blue-300">
+                      <span className="font-semibold">Nigerian WHT rates: </span>
+                      5% for most services, 10% for rent &amp; directors' fees.
+                      The deducted WHT is a credit against your income tax liability with FIRS.
+                    </div>
+                  </div>
+                )}
+
+                {/* VAT explainer */}
+                {enableVat && (
+                  <div className="mt-3 rounded-xl border border-blue-900/50 bg-blue-950/30 px-4 py-3 text-xs leading-relaxed text-blue-300">
+                    <span className="font-semibold">VAT @ 7.5%: </span>
+                    Output VAT is computed on revenue invoiced under this project.
+                    Input VAT on related expenses is offset, and the net liability
+                    appears on your analytics dashboard each quarter.
+                  </div>
+                )}
+              </div>
+
+              {/* Errors / success */}
+              {error && (
+                <p className="rounded-xl border border-red-800 bg-red-950/60 px-4 py-3 text-xs text-red-400">
+                  {error}
+                </p>
+              )}
+              {saveOk && (
+                <p className="rounded-xl border border-emerald-800 bg-emerald-950/60 px-4 py-3 text-xs text-emerald-400">
+                  Settings saved successfully.
+                </p>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-2 pb-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 rounded-xl border border-zinc-700 py-2.5 text-sm text-zinc-400 transition hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save Settings"}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
