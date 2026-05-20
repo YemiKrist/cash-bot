@@ -324,14 +324,17 @@ function exportPDF(
     <span>Cash Bot — Automated Financial Intelligence for Nigerian Entrepreneurs</span>
     <span>Confidential — Not for Distribution</span>
   </div>
-  <script>window.onload = function(){ window.print(); }</script>
 </body>
 </html>`;
 
-  const win = window.open("", "_blank", "width=900,height=700");
-  if (!win) { alert("Please allow pop-ups to export the PDF report."); return; }
-  win.document.write(html);
-  win.document.close();
+  const blob = new Blob([html], { type: "application/pdf" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${workspaceName.replace(/\s+/g, "_")}${activeProjectName ? `_${activeProjectName.replace(/\s+/g, "_")}` : ""}_Performance_Report.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  URL.revokeObjectURL(link.href);
+  link.remove();
 }
 
 // ── Category metadata ─────────────────────────────────────────────────────────

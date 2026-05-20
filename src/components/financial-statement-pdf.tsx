@@ -506,14 +506,14 @@ function buildStatementHTML(
 // ── Silent Blob anchor download — zero pop-up risk ───────────────────────────
 
 function downloadAsBlob(html: string, filename: string): void {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const blob = new Blob([html], { type: "application/pdf" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
   link.download = filename;
   document.body.appendChild(link);
   link.click();
-  link.remove();
   URL.revokeObjectURL(link.href);
+  link.remove();
 }
 
 // ── Public hook ───────────────────────────────────────────────────────────────
@@ -556,7 +556,7 @@ export function useFinancialPDFExport(): UseFinancialPDFExportResult {
 
       downloadAsBlob(
         buildStatementHTML("business", businessName, rows),
-        `${businessName.replace(/\s+/g, "_")}_Business_Tax_Summary.html`,
+        `${businessName.replace(/\s+/g, "_")}_Business_Tax_Summary.pdf`,
       );
     } finally {
       setExporting(false);
@@ -590,7 +590,7 @@ export function useFinancialPDFExport(): UseFinancialPDFExportResult {
 
       downloadAsBlob(
         buildStatementHTML("project", projectName, rows),
-        `${projectName.replace(/\s+/g, "_")}_FIRS_Audit_Statement.html`,
+        `${projectName.replace(/\s+/g, "_")}_Financial_Statement.pdf`,
       );
     } finally {
       setExporting(false);
