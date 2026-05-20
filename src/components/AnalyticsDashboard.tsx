@@ -354,11 +354,13 @@ function currentQuarterLabel(): string {
 function TaxLiabilityCard({
   tax,
   loading,
-  onConfigure,
+  onAction,
+  actionLabel,
 }: {
   tax: TaxSummary | null;
   loading: boolean;
-  onConfigure?: () => void;
+  onAction?: () => void;
+  actionLabel?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -386,16 +388,12 @@ function TaxLiabilityCard({
             <path d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
           </svg>
         </div>
-        {onConfigure && (
+        {onAction && actionLabel && (
           <button
-            onClick={onConfigure}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-700 py-2 text-xs font-semibold text-zinc-400 transition hover:border-emerald-600 hover:text-emerald-400"
+            onClick={onAction}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white"
           >
-            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-            Configure VAT Settings
+            {actionLabel}
           </button>
         )}
       </div>
@@ -489,6 +487,15 @@ function TaxLiabilityCard({
             This is an estimate only. Consult a tax professional for filing with FIRS.
           </p>
         </div>
+      )}
+
+      {onAction && actionLabel && (
+        <button
+          onClick={onAction}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white"
+        >
+          {actionLabel}
+        </button>
       )}
     </div>
   );
@@ -1059,7 +1066,20 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
       )}
 
       {/* Tax liability card */}
-      <TaxLiabilityCard tax={taxData} loading={taxLoading} onConfigure={onSettingsClick} />
+      <TaxLiabilityCard
+        tax={taxData}
+        loading={taxLoading}
+        onAction={
+          projectId && selectedProjectName
+            ? () => exportProjectStatement(projectId, selectedProjectName)
+            : onSettingsClick
+        }
+        actionLabel={
+          projectId
+            ? "📄 View Project Audit Statement"
+            : "📊 View Business Tax Breakdown"
+        }
+      />
 
       {/* Empty state when a filter yields no data */}
       {data.length === 0 && projectId ? (

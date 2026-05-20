@@ -499,21 +499,21 @@ function buildStatementHTML(
     <div>CONFIDENTIAL &middot; NOT FOR DISTRIBUTION</div>
   </footer>
 
-  <script>window.addEventListener("load", function(){ window.print(); });</script>
 </body>
 </html>`;
 }
 
-// ── PDF window opener ─────────────────────────────────────────────────────────
+// ── Silent Blob anchor download — zero pop-up risk ───────────────────────────
 
-function openInPrintWindow(html: string): void {
-  const win = window.open("", "_blank", "width=960,height=760");
-  if (!win) {
-    alert("Please allow pop-ups to export the financial statement.");
-    return;
-  }
-  win.document.write(html);
-  win.document.close();
+function downloadAsBlob(html: string, filename: string): void {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
 }
 
 // ── Public hook ───────────────────────────────────────────────────────────────
@@ -554,7 +554,10 @@ export function useFinancialPDFExport(): UseFinancialPDFExportResult {
         enrichRow(tx, tx.project_id ? (projMap.get(tx.project_id) ?? null) : null)
       );
 
-      openInPrintWindow(buildStatementHTML("business", businessName, rows));
+      downloadAsBlob(
+        buildStatementHTML("business", businessName, rows),
+        `${businessName.replace(/\s+/g, "_")}_Business_Tax_Summary.html`,
+      );
     } finally {
       setExporting(false);
     }
@@ -585,7 +588,10 @@ export function useFinancialPDFExport(): UseFinancialPDFExportResult {
 
       const rows = txns.map((tx) => enrichRow(tx, proj));
 
-      openInPrintWindow(buildStatementHTML("project", projectName, rows));
+      downloadAsBlob(
+        buildStatementHTML("project", projectName, rows),
+        `${projectName.replace(/\s+/g, "_")}_FIRS_Audit_Statement.html`,
+      );
     } finally {
       setExporting(false);
     }
