@@ -9,16 +9,78 @@ interface Props {
   onClose: () => void;
 }
 
+const WHT_RATE_OPTIONS = [
+  { value: "5",  label: "5% — Standard Contracts, Construction, Digital Infrastructures" },
+  { value: "10", label: "10% — Professional Fees, Consulting, Agency Retainers" },
+] as const;
+
+const WHT_INFO = `Withholding Tax (WHT) is deducted upfront at source by corporate clients. Cash Bot will log these as advance tax credits to track against your FIRS / NRS TaxPro-Max annual clearance.`;
+
+function Toggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`relative ml-4 h-6 w-11 shrink-0 rounded-full transition-colors ${
+        checked ? "bg-emerald-500" : "bg-zinc-700"
+      }`}
+      aria-checked={checked}
+      role="switch"
+    >
+      <span
+        className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+          checked ? "translate-x-5" : "translate-x-0"
+        }`}
+      />
+    </button>
+  );
+}
+
+function ToggleRow({
+  label,
+  description,
+  checked,
+  onChange,
+  accent = false,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  accent?: boolean;
+}) {
+  return (
+    <div className={`flex items-center justify-between rounded-2xl border px-4 py-4 ${
+      accent
+        ? "border-emerald-800/60 bg-emerald-950/20"
+        : "border-zinc-800 bg-zinc-800/40"
+    }`}>
+      <div>
+        <p className="text-sm font-medium text-zinc-200">{label}</p>
+        <p className="mt-0.5 text-xs text-zinc-500">{description}</p>
+      </div>
+      <Toggle checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
 export default function ProjectSettings({ projectId, projectName, onClose }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const [enableVat, setEnableVat] = useState(false);
-  const [enableWht, setEnableWht] = useState(false);
-  const [whtRate,   setWhtRate]   = useState("5.0");
-  const [loading,   setLoading]   = useState(true);
-  const [saving,    setSaving]    = useState(false);
-  const [error,     setError]     = useState<string | null>(null);
-  const [saveOk,    setSaveOk]    = useState(false);
+  const [overrideTax, setOverrideTax] = useState(false);
+  const [enableVat,   setEnableVat]   = useState(false);
+  const [enableWht,   setEnableWht]   = useState(false);
+  const [whtRate,     setWhtRate]     = useState<"5" | "10">("5");
+  const [loading,     setLoading]     = useState(true);
+  const [saving,      setSaving]      = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
+  const [saveOk,      setSaveOk]      = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -31,13 +93,15 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
 
       if (res.ok) {
         const d = await res.json() as {
-          enable_vat: boolean;
-          enable_wht: boolean;
-          wht_rate_percent: number;
+          override_business_tax: boolean;
+          enable_vat:            boolean;
+          enable_wht:            boolean;
+          wht_rate_percent:      number;
         };
-        setEnableVat(d.enable_vat ?? false);
-        setEnableWht(d.enable_wht ?? false);
-        setWhtRate(String(d.wht_rate_percent ?? 5.0));
+        setOverrideTax(d.override_business_tax ?? false);
+        setEnableVat(d.enable_vat   ?? false);
+        setEnableWht(d.enable_wht   ?? false);
+        setWhtRate((d.wht_rate_percent ?? 5) >= 7.5 ? "10" : "5");
       }
       setLoading(false);
     }
@@ -50,16 +114,21 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // Turning override OFF resets project-level flags to safe defaults.
+  function handleOverrideToggle(v: boolean) {
+    setOverrideTax(v);
+    if (!v) {
+      setEnableVat(false);
+      setEnableWht(false);
+    }
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSaveOk(false);
 
     const rate = parseFloat(whtRate);
-    if (isNaN(rate) || rate < 0 || rate > 100) {
-      setError("WHT rate must be between 0 and 100.");
-      return;
-    }
 
     setSaving(true);
 
@@ -73,9 +142,10 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
         Authorization:  `Bearer ${token}`,
       },
       body: JSON.stringify({
-        enable_vat:       enableVat,
-        enable_wht:       enableWht,
-        wht_rate_percent: rate,
+        override_business_tax: overrideTax,
+        enable_vat:            overrideTax ? enableVat  : false,
+        enable_wht:            overrideTax ? enableWht  : false,
+        wht_rate_percent:      overrideTax ? rate       : 5.0,
       }),
     });
 
@@ -132,93 +202,86 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
           ) : (
             <form onSubmit={handleSave} className="space-y-6 px-6 py-6">
 
-              {/* ── Tax & Compliance ──────────────────────────────────────── */}
+              {/* ── Contract Tax Override ─────────────────────────────────── */}
               <div>
-                <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
                   Tax &amp; Compliance
                 </p>
+                <p className="mb-4 text-xs text-zinc-600">
+                  By default this project inherits the business-level VAT settings.
+                  Enable an override to apply contract-specific rules for this client.
+                </p>
 
-                {/* VAT toggle */}
-                <div className="flex items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-800/40 px-4 py-4">
-                  <div>
-                    <p className="text-sm font-medium text-zinc-200">Apply 7.5% VAT</p>
-                    <p className="mt-0.5 text-xs text-zinc-500">
-                      Include VAT on revenue for this project's tax estimate.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setEnableVat((v) => !v)}
-                    className={`relative ml-4 h-6 w-11 shrink-0 rounded-full transition-colors ${
-                      enableVat ? "bg-emerald-500" : "bg-zinc-700"
-                    }`}
-                    aria-checked={enableVat}
-                    role="switch"
-                  >
-                    <span
-                      className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                        enableVat ? "translate-x-5" : "translate-x-0"
-                      }`}
-                    />
-                  </button>
-                </div>
+                {/* Master override toggle */}
+                <ToggleRow
+                  label="Use custom tax settings for this project contract"
+                  description="Override the business default and apply contract-specific VAT / WHT rules."
+                  checked={overrideTax}
+                  onChange={handleOverrideToggle}
+                  accent={overrideTax}
+                />
 
-                {/* WHT toggle */}
-                <div className="mt-3 flex items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-800/40 px-4 py-4">
-                  <div>
-                    <p className="text-sm font-medium text-zinc-200">Apply Withholding Tax (WHT)</p>
-                    <p className="mt-0.5 text-xs text-zinc-500">
-                      Track WHT deducted from payments received on this project.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setEnableWht((v) => !v)}
-                    className={`relative ml-4 h-6 w-11 shrink-0 rounded-full transition-colors ${
-                      enableWht ? "bg-emerald-500" : "bg-zinc-700"
-                    }`}
-                    aria-checked={enableWht}
-                    role="switch"
-                  >
-                    <span
-                      className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                        enableWht ? "translate-x-5" : "translate-x-0"
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                {/* WHT rate — visible only when WHT is on */}
-                {enableWht && (
-                  <div className="mt-3">
-                    <label className="mb-1.5 block text-xs font-medium text-zinc-400">
-                      WHT Rate (%)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={whtRate}
-                      onChange={(e) => setWhtRate(e.target.value)}
-                      placeholder="5.0"
-                      className={fieldCls}
-                    />
-                    <div className="mt-3 rounded-xl border border-blue-900/50 bg-blue-950/30 px-4 py-3 text-xs leading-relaxed text-blue-300">
-                      <span className="font-semibold">Nigerian WHT rates: </span>
-                      5% for most services, 10% for rent &amp; directors' fees.
-                      The deducted WHT is a credit against your income tax liability with FIRS.
-                    </div>
+                {/* When override is OFF — informational */}
+                {!overrideTax && (
+                  <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-800/30 px-4 py-3 text-xs leading-relaxed text-zinc-500">
+                    Business VAT default applies to this project. Enable the override above
+                    to set contract-specific rules (e.g. WHT deductions or VAT exemption).
                   </div>
                 )}
 
-                {/* VAT explainer */}
-                {enableVat && (
-                  <div className="mt-3 rounded-xl border border-blue-900/50 bg-blue-950/30 px-4 py-3 text-xs leading-relaxed text-blue-300">
-                    <span className="font-semibold">VAT @ 7.5%: </span>
-                    Output VAT is computed on revenue invoiced under this project.
-                    Input VAT on related expenses is offset, and the net liability
-                    appears on your analytics dashboard each quarter.
+                {/* When override is ON — contract-specific controls */}
+                {overrideTax && (
+                  <div className="mt-3 space-y-3">
+
+                    {/* VAT override */}
+                    <ToggleRow
+                      label="Apply VAT on this contract"
+                      description="Enable if this client pays VAT-inclusive. Overrides the business default."
+                      checked={enableVat}
+                      onChange={setEnableVat}
+                    />
+
+                    {/* WHT toggle */}
+                    <ToggleRow
+                      label="Apply Withholding Tax (WHT)"
+                      description="Client deducts WHT before paying. Track credit notes for FIRS TCC."
+                      checked={enableWht}
+                      onChange={setEnableWht}
+                    />
+
+                    {/* WHT rate selector */}
+                    {enableWht && (
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-zinc-400">
+                          WHT Rate
+                        </label>
+                        <select
+                          value={whtRate}
+                          onChange={(e) => setWhtRate(e.target.value as "5" | "10")}
+                          className={fieldCls}
+                        >
+                          {WHT_RATE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Combined explainer when both are on */}
+                    {enableVat && enableWht && (
+                      <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 px-4 py-3 text-xs leading-relaxed text-amber-300">
+                        <span className="font-semibold">Both VAT &amp; WHT active: </span>
+                        VAT splits your true revenue from the tax collected.
+                        WHT is then separately deducted by the client before payment.
+                        Both breakdowns will be shown in your WhatsApp confirmation.
+                      </div>
+                    )}
+
+                    {/* WHT info banner */}
+                    <div className="flex gap-3 rounded-xl border border-zinc-800 bg-zinc-800/30 px-4 py-3">
+                      <span className="mt-px shrink-0 text-base leading-none">ℹ️</span>
+                      <p className="text-xs leading-relaxed text-zinc-500">{WHT_INFO}</p>
+                    </div>
                   </div>
                 )}
               </div>

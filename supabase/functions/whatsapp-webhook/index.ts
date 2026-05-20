@@ -61,27 +61,36 @@ interface BusinessRow {
   id: string;
   user_id: string;
   name: string;
+  enable_vat: boolean;
+  default_vat_rate: number;
+  enable_wht: boolean;
+  wht_rate_percent: number;
 }
 
-interface VatSettings {
-  has_vat: boolean;
-  tax_name: string;
-  tax_percentage: number;
-}
-
-interface ProjectTaxConfig {
+// Project-level DB row — only active when override_business_tax is true.
+interface ProjectTaxOverride {
+  override_business_tax: boolean;
   enable_vat: boolean;
   enable_wht: boolean;
   wht_rate_percent: number;
 }
 
+// Resolved config after merging business defaults + project override.
+interface EffectiveTaxConfig {
+  enable_vat: boolean;
+  vat_rate: number;
+  enable_wht: boolean;
+  wht_rate: number;
+}
+
 interface TaxBreakdown {
   gross_amount: number;
-  core_revenue: number;       // Excl. VAT when VAT-enabled; equals gross otherwise
-  tax_vat_amount: number;     // 0 when VAT disabled
-  tax_wht_amount: number;     // 0 when WHT disabled
+  core_revenue: number;        // Excl. VAT when VAT-enabled; equals gross otherwise
+  tax_vat_amount: number;      // 0 when VAT disabled
+  tax_wht_amount: number;      // 0 when WHT disabled
   net_amount_received: number; // Cash actually received after WHT deduction
   vat_enabled: boolean;
+  vat_rate: number;
   wht_enabled: boolean;
   wht_rate: number;
 }
@@ -96,22 +105,39 @@ function fmtNGN(amount: number): string {
   }).format(amount);
 }
 
-function computeTaxBreakdown(amount: number, cfg: ProjectTaxConfig): TaxBreakdown {
-  // Nigerian VAT is 7.5% (Finance Act 2019). Amount received is VAT-inclusive,
-  // so true revenue = gross / 1.075.
-  const VAT_DIVISOR = 1.075;
-  const whtRate = cfg.wht_rate_percent / 100;
+// Merge business-level defaults with project-level contract overrides.
+// The project override wins in full when override_business_tax is true.
+function resolveEffectiveTax(
+  biz: Pick<BusinessRow, "enable_vat" | "default_vat_rate" | "enable_wht" | "wht_rate_percent"> | null,
+  proj: ProjectTaxOverride | null,
+): EffectiveTaxConfig {
+  if (proj?.override_business_tax) {
+    return {
+      enable_vat: proj.enable_vat,
+      vat_rate:   7.5, // Nigerian standard VAT rate at project level
+      enable_wht: proj.enable_wht,
+      wht_rate:   proj.wht_rate_percent,
+    };
+  }
+  // Business defaults — inherit WHT settings from business row
+  return {
+    enable_vat: biz?.enable_vat        ?? false,
+    vat_rate:   biz?.default_vat_rate  ?? 7.5,
+    enable_wht: biz?.enable_wht        ?? false,
+    wht_rate:   biz?.wht_rate_percent  ?? 5.0,
+  };
+}
 
-  const core_revenue = cfg.enable_vat ? amount / VAT_DIVISOR : amount;
+function computeTaxBreakdown(amount: number, cfg: EffectiveTaxConfig): TaxBreakdown {
+  // VAT: amount received is inclusive of VAT, so true revenue = gross / (1 + rate).
+  const vatDivisor = 1 + cfg.vat_rate / 100;
+  const whtFraction = cfg.wht_rate / 100;
+
+  const core_revenue   = cfg.enable_vat ? amount / vatDivisor : amount;
   const tax_vat_amount = cfg.enable_vat ? amount - core_revenue : 0;
 
-  // WHT: the client withholds wht_rate% before remitting. The gross bill is the
-  // full invoice amount; only (gross - WHT) is transferred to the vendor.
-  const tax_wht_amount = cfg.enable_wht ? amount * whtRate : 0;
-
-  // Net cash actually received:
-  //   VAT-only   → full amount arrives (VAT is collected and held for FIRS)
-  //   WHT (±VAT) → client deducts WHT before paying, so net = gross - WHT
+  // WHT: client withholds wht_rate% before remitting; vendor receives the rest.
+  const tax_wht_amount    = cfg.enable_wht ? amount * whtFraction : 0;
   const net_amount_received = cfg.enable_wht ? amount - tax_wht_amount : amount;
 
   return {
@@ -121,8 +147,9 @@ function computeTaxBreakdown(amount: number, cfg: ProjectTaxConfig): TaxBreakdow
     tax_wht_amount,
     net_amount_received,
     vat_enabled: cfg.enable_vat,
+    vat_rate:    cfg.vat_rate,
     wht_enabled: cfg.enable_wht,
-    wht_rate: cfg.wht_rate_percent,
+    wht_rate:    cfg.wht_rate,
   };
 }
 
@@ -544,7 +571,7 @@ async function runPipeline(
   // Primary: first row in businesses. Fallback: first user_id in transactions.
   const { data: businesses, error: bizErr } = await supabase
     .from("businesses")
-    .select("id, user_id, name")
+    .select("id, user_id, name, enable_vat, default_vat_rate, enable_wht, wht_rate_percent")
     .order("created_at", { ascending: true })
     .limit(50) as { data: BusinessRow[] | null; error: unknown };
 
@@ -816,49 +843,41 @@ async function runPipeline(
     }
   }
 
-  // ── Step F2.5: Project-level tax configuration (inflows only) ───────────
-  // For inflow transactions linked to a project, fetch the project's Nigerian
-  // tax compliance flags. VAT and WHT only apply to revenue — outflows use
-  // the business-level VAT settings below (Step F3).
-  let projectTaxCfg: ProjectTaxConfig | null = null;
+  // ── Step F2.5: Tax cascade — business default → project override ─────────
+  // 1. Pull business VAT settings from the already-fetched businesses array.
+  // 2. If the project has override_business_tax=true, its flags take priority.
+  // 3. Effective config drives breakdown; non-overriding projects inherit biz.
+  const bizRow = businesses?.find((b) => b.id === businessId) ?? null;
+
+  let projectOverride: ProjectTaxOverride | null = null;
 
   if (parsed.transaction_type === "inflow" && projectId) {
-    const { data: ptCfg, error: ptErr } = await supabase
+    const { data: pov, error: povErr } = await supabase
       .from("projects")
-      .select("enable_vat, enable_wht, wht_rate_percent")
+      .select("override_business_tax, enable_vat, enable_wht, wht_rate_percent")
       .eq("id", projectId)
-      .maybeSingle() as { data: ProjectTaxConfig | null; error: { message: string } | null };
+      .maybeSingle() as {
+        data: ProjectTaxOverride | null;
+        error: { message: string } | null;
+      };
 
-    if (ptErr) {
-      console.error("[pipeline] Project tax config fetch failed:", ptErr.message);
-    } else if (ptCfg) {
-      projectTaxCfg = ptCfg;
-      console.log(`[pipeline] Project tax config (${projectId}):`, ptCfg);
+    if (povErr) {
+      console.error("[pipeline] Project tax override fetch failed:", povErr.message);
+    } else if (pov) {
+      projectOverride = pov;
+      console.log(`[pipeline] Project tax override (${projectId}):`, pov);
     }
   }
 
-  // Compute the compliance breakdown only when at least one tax flag is on.
+  const effectiveTax: EffectiveTaxConfig = resolveEffectiveTax(bizRow, projectOverride);
+  console.log("[pipeline] Effective tax config:", effectiveTax);
+
+  // Compute the compliance breakdown only when at least one tax flag is active.
   const taxBreakdown: TaxBreakdown | null =
-    projectTaxCfg && (projectTaxCfg.enable_vat || projectTaxCfg.enable_wht)
-      ? computeTaxBreakdown(parsed.amount, projectTaxCfg)
+    (parsed.transaction_type === "inflow" && projectId &&
+     (effectiveTax.enable_vat || effectiveTax.enable_wht))
+      ? computeTaxBreakdown(parsed.amount, effectiveTax)
       : null;
-
-  // ── Step F3: Business-level VAT settings (outflow deductibility) ─────────
-  // Fetch once here so the confirmation reply can inform the user when their
-  // expense will factor into the dashboard's Input VAT calculation.
-  // Defaults apply when no settings row exists yet (new business).
-  let vatSettings: VatSettings = { has_vat: false, tax_name: "VAT", tax_percentage: 7.5 };
-
-  if (businessId) {
-    const { data: vatRow } = await supabase
-      .from("business_invoice_settings")
-      .select("has_vat, tax_name, tax_percentage")
-      .eq("business_id", businessId)
-      .maybeSingle() as { data: VatSettings | null };
-
-    if (vatRow) vatSettings = vatRow;
-    console.log(`[pipeline] VAT settings for business ${businessId}:`, vatSettings);
-  }
 
   // ── Step G: Database ingestion ────────────────────────────────────────────
   const { error: insertErr } = await supabase.from("transactions").insert({
@@ -937,7 +956,7 @@ async function runPipeline(
         "",
         "🧾 *VAT Compliance Breakdown*",
         `   True Revenue (ex-VAT):  ${fmtNGN(taxBreakdown.core_revenue)}`,
-        `   VAT Collected (7.5%):   ${fmtNGN(taxBreakdown.tax_vat_amount)}`,
+        `   VAT Collected (${taxBreakdown.vat_rate}%):   ${fmtNGN(taxBreakdown.tax_vat_amount)}`,
         `   → Remit VAT to FIRS via TaxPro-Max`,
       );
     } else if (wht_enabled && !vat_enabled) {
@@ -958,7 +977,7 @@ async function runPipeline(
         "🧾 *Tax Compliance Breakdown*",
         `   Gross Invoice Value:    ${fmtNGN(taxBreakdown.gross_amount)}`,
         `   True Revenue (ex-VAT):  ${fmtNGN(taxBreakdown.core_revenue)}`,
-        `   VAT Collected (7.5%):   ${fmtNGN(taxBreakdown.tax_vat_amount)}`,
+        `   VAT Collected (${taxBreakdown.vat_rate}%):   ${fmtNGN(taxBreakdown.tax_vat_amount)}`,
         `   WHT Deducted (${wht_rate}%):  -${fmtNGN(taxBreakdown.tax_wht_amount)}`,
         `   Cash at Hand:           ${fmtNGN(taxBreakdown.net_amount_received)}`,
         `   → Remit VAT to FIRS · WHT Credit: ${fmtNGN(taxBreakdown.tax_wht_amount)}`,
@@ -969,14 +988,15 @@ async function runPipeline(
   // ── Input VAT note (business-level outflow deductibility) ────────────────
   // cogs and opex are the two tags the get_tax_summary RPC counts as Input VAT.
   const isInputVatEligible =
-    vatSettings.has_vat &&
+    (bizRow?.enable_vat ?? false) &&
     parsed.transaction_type === "outflow" &&
     (parsed.financial_tag === "cogs" || parsed.financial_tag === "opex");
 
   if (isInputVatEligible) {
+    const bizVatRate = bizRow?.default_vat_rate ?? 7.5;
     lines.push(
       "",
-      `🧾 ${vatSettings.tax_name} Deductible: This expense reduces your Input ${vatSettings.tax_name} on the dashboard (${vatSettings.tax_percentage}% of ${fmtNGN(parsed.amount)}).`,
+      `🧾 VAT Deductible: This expense reduces your Input VAT on the dashboard (${bizVatRate}% of ${fmtNGN(parsed.amount)}).`,
     );
   }
 
