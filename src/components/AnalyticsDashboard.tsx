@@ -55,19 +55,24 @@ function ProjectFilter({ selectedId, onChange, options, loading }: ProjectFilter
       >
         <path d="M2 7a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2Z" />
       </svg>
-      <select
-        value={selectedId ?? "all"}
-        onChange={(e) => onChange(e.target.value === "all" ? null : e.target.value)}
-        disabled={loading}
-        className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-300 outline-none transition hover:border-zinc-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50"
-      >
-        <option value="all">All Projects</option>
-        {options.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
+      <div className="relative">
+        <select
+          value={selectedId ?? "all"}
+          onChange={(e) => onChange(e.target.value === "all" ? null : e.target.value)}
+          disabled={loading}
+          className="appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2 pr-8 text-xs font-medium text-neutral-300 outline-none transition hover:border-neutral-600 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50"
+        >
+          <option value="all">All Projects</option>
+          {options.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </div>
       {selectedId && (
         <button
           onClick={() => onChange(null)}

@@ -63,7 +63,7 @@ export default function ResetPasswordPage() {
   }
 
   const field =
-    "w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition";
+    "block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition";
 
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center px-4">

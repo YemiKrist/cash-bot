@@ -148,7 +148,7 @@ export default function BusinessSettings({ onClose }: Props) {
   }
 
   const fieldCls =
-    "w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition disabled:opacity-50";
+    "block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition disabled:opacity-50";
 
   return (
     <div
@@ -248,15 +248,20 @@ export default function BusinessSettings({ onClose }: Props) {
                       <label className="mb-1.5 block text-xs font-medium text-zinc-400">
                         WHT Rate
                       </label>
-                      <select
-                        value={whtRate}
-                        onChange={(e) => setWhtRate(e.target.value as "5" | "10")}
-                        className={fieldCls}
-                      >
-                        {WHT_RATE_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          value={whtRate}
+                          onChange={(e) => setWhtRate(e.target.value as "5" | "10")}
+                          className={`${fieldCls} appearance-none pr-10`}
+                        >
+                          {WHT_RATE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                        <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
                 )}

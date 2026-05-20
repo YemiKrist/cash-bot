@@ -219,7 +219,7 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
                         value={newProjectName}
                         onChange={(e) => { setNewProjectName(e.target.value); setProjectError(null); }}
                         placeholder="Project name"
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                        className="w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2 text-xs text-neutral-200 placeholder-neutral-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
                       />
                       {projectError && <p className="mt-1 text-xs text-red-400">{projectError}</p>}
                       <div className="mt-1.5 flex gap-1.5">
@@ -249,7 +249,7 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
                 value={newName}
                 onChange={(e) => { setNewName(e.target.value); setCreateError(null); }}
                 placeholder="Business name"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
               />
               {createError && (
                 <p className="mt-1.5 rounded-lg border border-red-800 bg-red-950/60 px-2.5 py-1.5 text-[11px] leading-snug text-red-400">
