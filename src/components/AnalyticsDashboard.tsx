@@ -462,7 +462,7 @@ function TaxLiabilityCard({
           <div className="flex items-center justify-between text-xs">
             <span className="text-zinc-500">
               Output VAT
-              <span className="ml-1 text-zinc-700">(invoiced <NairaSign />{(taxable_revenue / 1000).toFixed(0)}K × {vat_rate}%)</span>
+              <span className="ml-1 text-zinc-700">(<NairaSign />{(taxable_revenue / 1000).toFixed(0)}K gross, {vat_rate}% incl.)</span>
             </span>
             <span className="font-semibold text-amber-400">
               +<Amt value={fmt(output_vat)} />
@@ -471,7 +471,7 @@ function TaxLiabilityCard({
           <div className="flex items-center justify-between text-xs">
             <span className="text-zinc-500">
               Input VAT
-              <span className="ml-1 text-zinc-700">(expenses <NairaSign />{(taxable_expenses / 1000).toFixed(0)}K × {vat_rate}%)</span>
+              <span className="ml-1 text-zinc-700">(expenses <NairaSign />{(taxable_expenses / 1000).toFixed(0)}K gross, {vat_rate}% incl.)</span>
             </span>
             <span className="font-semibold text-emerald-400">
               −<Amt value={fmt(input_vat)} />
