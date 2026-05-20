@@ -186,17 +186,17 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
               <div className="space-y-3">
                 <div>
                   <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-neutral-500">
-                    Tax &amp; Compliance
+                    Tax &amp; Contract Configuration
                   </p>
                   <p className="text-xs text-neutral-600">
-                    Rules applied to inflow transactions logged against this project contract.
+                    Configure tax rules specifically for this project contract.
                   </p>
                 </div>
 
                 {/* VAT toggle */}
                 <ToggleRow
-                  label="Track 7.5% VAT for this Project Invoice"
-                  description="Splits output VAT from each inflow so you can remit to FIRS via TaxPro-Max."
+                  label="Enable VAT"
+                  description="Apply 7.5% Nigerian VAT to inflows received for this project."
                   checked={trackVat}
                   onChange={setTrackVat}
                 />
