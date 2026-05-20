@@ -9,6 +9,7 @@ import {
   useTaxSummary,
 } from "@/hooks/useAnalytics";
 import { Amt, NairaSign } from "@/components/Amt";
+import { useFinancialPDFExport } from "@/components/financial-statement-pdf";
 import type { WeeklySummaryRow, ProjectSummaryRow, TaxSummary } from "@/lib/types";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -686,6 +687,9 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
 
   const workspaceName = activeBusiness?.name ?? "Personal Ledger";
 
+  const { exporting, exportBusinessStatement, exportProjectStatement } =
+    useFinancialPDFExport();
+
   if (!activeBusiness) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 py-20 text-center">
@@ -777,6 +781,46 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
             </svg>
             PDF
           </button>
+
+          <div className="h-4 w-px bg-zinc-700" />
+
+          {/* ── Tax statement exports ─────────────────────────────────── */}
+          <button
+            onClick={() => exportBusinessStatement(activeBusiness.id, workspaceName)}
+            disabled={exporting}
+            title="Export an audit-ready A4 tax compliance statement for this business"
+            className="flex items-center gap-1.5 rounded-lg border border-emerald-800/60 bg-emerald-950/30 px-3.5 py-2 text-xs font-semibold text-emerald-300 transition hover:border-emerald-600 hover:bg-emerald-950/50 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {exporting ? (
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border border-emerald-600 border-t-emerald-300" />
+            ) : (
+              <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M7 8h10M7 12h6M7 16h4" />
+              </svg>
+            )}
+            Business Tax Summary
+          </button>
+
+          {projectId && selectedProjectName && (
+            <button
+              onClick={() => exportProjectStatement(projectId, selectedProjectName)}
+              disabled={exporting}
+              title="Export an audit-ready A4 financial statement for this project contract"
+              className="flex items-center gap-1.5 rounded-lg border border-blue-800/60 bg-blue-950/30 px-3.5 py-2 text-xs font-semibold text-blue-300 transition hover:border-blue-600 hover:bg-blue-950/50 hover:text-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {exporting ? (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border border-blue-600 border-t-blue-300" />
+              ) : (
+                <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <path d="M9 13h6M9 17h4" />
+                </svg>
+              )}
+              Project Statement
+            </button>
+          )}
         </div>
       </div>
 

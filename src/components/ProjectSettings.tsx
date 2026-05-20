@@ -14,7 +14,9 @@ const WHT_RATE_OPTIONS = [
   { value: "10", label: "10% — Professional Fees, Consulting, Agency Retainers" },
 ] as const;
 
-const WHT_INFO = `Withholding Tax (WHT) is deducted upfront at source by corporate clients. Cash Bot will log these as advance tax credits to track against your FIRS / NRS TaxPro-Max annual clearance.`;
+const WHT_INFO =
+  "Withholding Tax (WHT) is deducted upfront at source by corporate clients. " +
+  "Cash Bot will log these as advance tax credits to track against your FIRS / NRS TaxPro-Max annual clearance.";
 
 function Toggle({
   checked,
@@ -28,7 +30,7 @@ function Toggle({
       type="button"
       onClick={() => onChange(!checked)}
       className={`relative ml-4 h-6 w-11 shrink-0 rounded-full transition-colors ${
-        checked ? "bg-emerald-500" : "bg-zinc-700"
+        checked ? "bg-emerald-500" : "bg-neutral-700"
       }`}
       aria-checked={checked}
       role="switch"
@@ -47,23 +49,17 @@ function ToggleRow({
   description,
   checked,
   onChange,
-  accent = false,
 }: {
   label: string;
   description: string;
   checked: boolean;
   onChange: (v: boolean) => void;
-  accent?: boolean;
 }) {
   return (
-    <div className={`flex items-center justify-between rounded-2xl border px-4 py-4 ${
-      accent
-        ? "border-emerald-800/60 bg-emerald-950/20"
-        : "border-zinc-800 bg-zinc-800/40"
-    }`}>
+    <div className="flex items-center justify-between rounded-2xl border border-neutral-800 bg-neutral-900/40 px-4 py-4">
       <div>
-        <p className="text-sm font-medium text-zinc-200">{label}</p>
-        <p className="mt-0.5 text-xs text-zinc-500">{description}</p>
+        <p className="text-sm font-medium text-neutral-200">{label}</p>
+        <p className="mt-0.5 text-xs text-neutral-500">{description}</p>
       </div>
       <Toggle checked={checked} onChange={onChange} />
     </div>
@@ -73,14 +69,13 @@ function ToggleRow({
 export default function ProjectSettings({ projectId, projectName, onClose }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const [overrideTax, setOverrideTax] = useState(false);
-  const [enableVat,   setEnableVat]   = useState(false);
-  const [enableWht,   setEnableWht]   = useState(false);
-  const [whtRate,     setWhtRate]     = useState<"5" | "10">("5");
-  const [loading,     setLoading]     = useState(true);
-  const [saving,      setSaving]      = useState(false);
-  const [error,       setError]       = useState<string | null>(null);
-  const [saveOk,      setSaveOk]      = useState(false);
+  const [trackVat, setTrackVat] = useState(false);
+  const [trackWht, setTrackWht] = useState(false);
+  const [whtRate,  setWhtRate]  = useState<"5" | "10">("5");
+  const [loading,  setLoading]  = useState(true);
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+  const [saveOk,   setSaveOk]   = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -93,14 +88,12 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
 
       if (res.ok) {
         const d = await res.json() as {
-          override_business_tax: boolean;
-          enable_vat:            boolean;
-          enable_wht:            boolean;
-          wht_rate_percent:      number;
+          track_vat:        boolean;
+          track_wht:        boolean;
+          wht_rate_percent: number;
         };
-        setOverrideTax(d.override_business_tax ?? false);
-        setEnableVat(d.enable_vat   ?? false);
-        setEnableWht(d.enable_wht   ?? false);
+        setTrackVat(d.track_vat ?? false);
+        setTrackWht(d.track_wht ?? false);
         setWhtRate((d.wht_rate_percent ?? 5) >= 7.5 ? "10" : "5");
       }
       setLoading(false);
@@ -114,22 +107,10 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Turning override OFF resets project-level flags to safe defaults.
-  function handleOverrideToggle(v: boolean) {
-    setOverrideTax(v);
-    if (!v) {
-      setEnableVat(false);
-      setEnableWht(false);
-    }
-  }
-
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSaveOk(false);
-
-    const rate = parseFloat(whtRate);
-
     setSaving(true);
 
     const { data: { session } } = await supabase.auth.getSession();
@@ -142,10 +123,9 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
         Authorization:  `Bearer ${token}`,
       },
       body: JSON.stringify({
-        override_business_tax: overrideTax,
-        enable_vat:            overrideTax ? enableVat  : false,
-        enable_wht:            overrideTax ? enableWht  : false,
-        wht_rate_percent:      overrideTax ? rate       : 5.0,
+        track_vat:        trackVat,
+        track_wht:        trackWht,
+        wht_rate_percent: parseFloat(whtRate),
       }),
     });
 
@@ -170,17 +150,17 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
       onClick={(e) => e.target === overlayRef.current && onClose()}
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:px-4"
     >
-      <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-zinc-800 bg-zinc-900 shadow-2xl sm:max-w-md sm:rounded-2xl">
+      <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-neutral-800 bg-zinc-900 shadow-2xl sm:max-w-md sm:rounded-2xl">
         {/* Drag handle (mobile) */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
-          <div className="h-1 w-10 rounded-full bg-zinc-700" />
+          <div className="h-1 w-10 rounded-full bg-neutral-700" />
         </div>
 
         {/* Header */}
-        <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3 sm:px-6 sm:py-4">
+        <div className="flex items-center gap-3 border-b border-neutral-800 px-4 py-3 sm:px-6 sm:py-4">
           <button
             onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-zinc-800 text-zinc-400 transition hover:bg-zinc-700 hover:text-white"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-neutral-800 text-neutral-400 transition hover:bg-neutral-700 hover:text-white"
             aria-label="Close"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
@@ -189,7 +169,7 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
           </button>
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold text-white">Project Settings</h2>
-            <p className="mt-0.5 truncate text-xs text-zinc-500">{projectName}</p>
+            <p className="mt-0.5 truncate text-xs text-neutral-500">{projectName}</p>
           </div>
         </div>
 
@@ -197,98 +177,94 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
         <div className="overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-16">
-              <span className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-emerald-500" />
+              <span className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-700 border-t-emerald-500" />
             </div>
           ) : (
             <form onSubmit={handleSave} className="space-y-6 px-6 py-6">
 
-              {/* ── Contract Tax Override ─────────────────────────────────── */}
-              <div>
-                <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                  Tax &amp; Compliance
-                </p>
-                <p className="mb-4 text-xs text-zinc-600">
-                  By default this project inherits the business-level VAT settings.
-                  Enable an override to apply contract-specific rules for this client.
-                </p>
+              {/* ── Tax & Compliance ──────────────────────────────────────── */}
+              <div className="space-y-3">
+                <div>
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-neutral-500">
+                    Tax &amp; Compliance
+                  </p>
+                  <p className="text-xs text-neutral-600">
+                    Rules applied to inflow transactions logged against this project contract.
+                  </p>
+                </div>
 
-                {/* Master override toggle */}
+                {/* VAT toggle */}
                 <ToggleRow
-                  label="Use custom tax settings for this project contract"
-                  description="Override the business default and apply contract-specific VAT / WHT rules."
-                  checked={overrideTax}
-                  onChange={handleOverrideToggle}
-                  accent={overrideTax}
+                  label="Track 7.5% VAT for this Project Invoice"
+                  description="Splits output VAT from each inflow so you can remit to FIRS via TaxPro-Max."
+                  checked={trackVat}
+                  onChange={setTrackVat}
                 />
 
-                {/* When override is OFF — informational */}
-                {!overrideTax && (
-                  <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-800/30 px-4 py-3 text-xs leading-relaxed text-zinc-500">
-                    Business VAT default applies to this project. Enable the override above
-                    to set contract-specific rules (e.g. WHT deductions or VAT exemption).
+                {trackVat && (
+                  <div className="rounded-xl border border-blue-900/50 bg-blue-950/30 px-4 py-3 text-xs leading-relaxed text-blue-300">
+                    <span className="font-semibold">How it works: </span>
+                    Each inflow is treated as VAT-inclusive. True revenue = gross ÷ 1.075.
+                    The extracted VAT appears as an output liability on your analytics dashboard.
                   </div>
                 )}
 
-                {/* When override is ON — contract-specific controls */}
-                {overrideTax && (
-                  <div className="mt-3 space-y-3">
+                {/* WHT toggle */}
+                <ToggleRow
+                  label="Track Withholding Tax (WHT)"
+                  description="Client deducts WHT before paying. Track credit notes for FIRS TCC clearance."
+                  checked={trackWht}
+                  onChange={setTrackWht}
+                />
 
-                    {/* VAT override */}
-                    <ToggleRow
-                      label="Apply VAT on this contract"
-                      description="Enable if this client pays VAT-inclusive. Overrides the business default."
-                      checked={enableVat}
-                      onChange={setEnableVat}
-                    />
-
-                    {/* WHT toggle */}
-                    <ToggleRow
-                      label="Apply Withholding Tax (WHT)"
-                      description="Client deducts WHT before paying. Track credit notes for FIRS TCC."
-                      checked={enableWht}
-                      onChange={setEnableWht}
-                    />
-
-                    {/* WHT rate selector */}
-                    {enableWht && (
-                      <div>
-                        <label className="mb-1.5 block text-xs font-medium text-zinc-400">
-                          WHT Rate
-                        </label>
-                        <div className="relative">
-                          <select
-                            value={whtRate}
-                            onChange={(e) => setWhtRate(e.target.value as "5" | "10")}
-                            className={`${fieldCls} appearance-none pr-10`}
-                          >
-                            {WHT_RATE_OPTIONS.map((o) => (
-                              <option key={o.value} value={o.value}>{o.label}</option>
-                            ))}
-                          </select>
-                          <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="6 9 12 15 18 9" />
-                          </svg>
-                        </div>
+                {/* WHT rate dropdown — visible when WHT is on */}
+                {trackWht && (
+                  <div className="space-y-3 pl-1">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-neutral-400">
+                        WHT Rate
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={whtRate}
+                          onChange={(e) => setWhtRate(e.target.value as "5" | "10")}
+                          className={`${fieldCls} appearance-none pr-10`}
+                        >
+                          {WHT_RATE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                        <svg
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
                       </div>
-                    )}
-
-                    {/* Combined explainer when both are on */}
-                    {enableVat && enableWht && (
-                      <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 px-4 py-3 text-xs leading-relaxed text-amber-300">
-                        <span className="font-semibold">Both VAT &amp; WHT active: </span>
-                        VAT splits your true revenue from the tax collected.
-                        WHT is then separately deducted by the client before payment.
-                        Both breakdowns will be shown in your WhatsApp confirmation.
-                      </div>
-                    )}
-
-                    {/* WHT info banner */}
-                    <div className="flex gap-3 rounded-xl border border-zinc-800 bg-zinc-800/30 px-4 py-3">
-                      <span className="mt-px shrink-0 text-base leading-none">ℹ️</span>
-                      <p className="text-xs leading-relaxed text-zinc-500">{WHT_INFO}</p>
                     </div>
                   </div>
                 )}
+
+                {/* Combined VAT + WHT explainer */}
+                {trackVat && trackWht && (
+                  <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 px-4 py-3 text-xs leading-relaxed text-amber-300">
+                    <span className="font-semibold">Both VAT &amp; WHT active: </span>
+                    VAT splits true revenue from the tax collected.
+                    WHT is separately withheld by the client before payment.
+                    Both breakdowns appear in your WhatsApp confirmation.
+                  </div>
+                )}
+
+                {/* WHT info banner */}
+                <div className="flex gap-3 rounded-xl border border-neutral-800 bg-neutral-800/30 px-4 py-3">
+                  <span className="mt-px shrink-0 text-base leading-none">ℹ️</span>
+                  <p className="text-xs leading-relaxed text-neutral-500">{WHT_INFO}</p>
+                </div>
               </div>
 
               {/* Errors / success */}
@@ -308,7 +284,7 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 rounded-xl border border-zinc-700 py-2.5 text-sm text-zinc-400 transition hover:text-white"
+                  className="flex-1 rounded-xl border border-neutral-700 py-2.5 text-sm text-neutral-400 transition hover:text-white"
                 >
                   Cancel
                 </button>

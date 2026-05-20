@@ -20,7 +20,7 @@ export async function GET(
 
   const { data, error } = await supabase
     .from("projects")
-    .select("override_business_tax, enable_vat, enable_wht, wht_rate_percent")
+    .select("track_vat, track_wht, wht_rate_percent")
     .eq("id", id)
     .maybeSingle();
 
@@ -38,19 +38,17 @@ export async function PATCH(
   const supabase = supabaseForRequest(req);
 
   const body = await req.json() as {
-    override_business_tax: boolean;
-    enable_vat:            boolean;
-    enable_wht:            boolean;
-    wht_rate_percent:      number;
+    track_vat:        boolean;
+    track_wht:        boolean;
+    wht_rate_percent: number;
   };
 
   const { error } = await supabase
     .from("projects")
     .update({
-      override_business_tax: body.override_business_tax,
-      enable_vat:            body.enable_vat,
-      enable_wht:            body.enable_wht,
-      wht_rate_percent:      body.wht_rate_percent,
+      track_vat:        body.track_vat,
+      track_wht:        body.track_wht,
+      wht_rate_percent: body.wht_rate_percent,
     })
     .eq("id", id);
 

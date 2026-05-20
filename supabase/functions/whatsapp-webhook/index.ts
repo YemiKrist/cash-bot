@@ -61,21 +61,16 @@ interface BusinessRow {
   id: string;
   user_id: string;
   name: string;
-  enable_vat: boolean;
-  default_vat_rate: number;
-  enable_wht: boolean;
+}
+
+// Project-level tax columns — source of truth for VAT and WHT tracking.
+interface ProjectTaxConfig {
+  track_vat: boolean;
+  track_wht: boolean;
   wht_rate_percent: number;
 }
 
-// Project-level DB row — only active when override_business_tax is true.
-interface ProjectTaxOverride {
-  override_business_tax: boolean;
-  enable_vat: boolean;
-  enable_wht: boolean;
-  wht_rate_percent: number;
-}
-
-// Resolved config after merging business defaults + project override.
+// Internal resolved config passed to computeTaxBreakdown.
 interface EffectiveTaxConfig {
   enable_vat: boolean;
   vat_rate: number;
@@ -103,29 +98,6 @@ function fmtNGN(amount: number): string {
     currency: "NGN",
     minimumFractionDigits: 2,
   }).format(amount);
-}
-
-// Merge business-level defaults with project-level contract overrides.
-// The project override wins in full when override_business_tax is true.
-function resolveEffectiveTax(
-  biz: Pick<BusinessRow, "enable_vat" | "default_vat_rate" | "enable_wht" | "wht_rate_percent"> | null,
-  proj: ProjectTaxOverride | null,
-): EffectiveTaxConfig {
-  if (proj?.override_business_tax) {
-    return {
-      enable_vat: proj.enable_vat,
-      vat_rate:   7.5, // Nigerian standard VAT rate at project level
-      enable_wht: proj.enable_wht,
-      wht_rate:   proj.wht_rate_percent,
-    };
-  }
-  // Business defaults — inherit WHT settings from business row
-  return {
-    enable_vat: biz?.enable_vat        ?? false,
-    vat_rate:   biz?.default_vat_rate  ?? 7.5,
-    enable_wht: biz?.enable_wht        ?? false,
-    wht_rate:   biz?.wht_rate_percent  ?? 5.0,
-  };
 }
 
 function computeTaxBreakdown(amount: number, cfg: EffectiveTaxConfig): TaxBreakdown {
@@ -571,7 +543,7 @@ async function runPipeline(
   // Primary: first row in businesses. Fallback: first user_id in transactions.
   const { data: businesses, error: bizErr } = await supabase
     .from("businesses")
-    .select("id, user_id, name, enable_vat, default_vat_rate, enable_wht, wht_rate_percent")
+    .select("id, user_id, name")
     .order("created_at", { ascending: true })
     .limit(50) as { data: BusinessRow[] | null; error: unknown };
 
@@ -843,39 +815,39 @@ async function runPipeline(
     }
   }
 
-  // ── Step F2.5: Tax cascade — business default → project override ─────────
-  // 1. Pull business VAT settings from the already-fetched businesses array.
-  // 2. If the project has override_business_tax=true, its flags take priority.
-  // 3. Effective config drives breakdown; non-overriding projects inherit biz.
-  const bizRow = businesses?.find((b) => b.id === businessId) ?? null;
-
-  let projectOverride: ProjectTaxOverride | null = null;
+  // ── Step F2.5: Project tax settings ──────────────────────────────────────
+  // VAT and WHT tracking live entirely at the project level.
+  let projectTax: ProjectTaxConfig | null = null;
 
   if (parsed.transaction_type === "inflow" && projectId) {
-    const { data: pov, error: povErr } = await supabase
+    const { data: pt, error: ptErr } = await supabase
       .from("projects")
-      .select("override_business_tax, enable_vat, enable_wht, wht_rate_percent")
+      .select("track_vat, track_wht, wht_rate_percent")
       .eq("id", projectId)
       .maybeSingle() as {
-        data: ProjectTaxOverride | null;
+        data: ProjectTaxConfig | null;
         error: { message: string } | null;
       };
 
-    if (povErr) {
-      console.error("[pipeline] Project tax override fetch failed:", povErr.message);
-    } else if (pov) {
-      projectOverride = pov;
-      console.log(`[pipeline] Project tax override (${projectId}):`, pov);
+    if (ptErr) {
+      console.error("[pipeline] Project tax fetch failed:", ptErr.message);
+    } else if (pt) {
+      projectTax = pt;
+      console.log(`[pipeline] Project tax config (${projectId}):`, pt);
     }
   }
 
-  const effectiveTax: EffectiveTaxConfig = resolveEffectiveTax(bizRow, projectOverride);
-  console.log("[pipeline] Effective tax config:", effectiveTax);
+  const effectiveTax: EffectiveTaxConfig | null = projectTax
+    ? {
+        enable_vat: projectTax.track_vat,
+        vat_rate:   7.5, // Nigerian statutory rate — Finance Act 2019
+        enable_wht: projectTax.track_wht,
+        wht_rate:   projectTax.wht_rate_percent,
+      }
+    : null;
 
-  // Compute the compliance breakdown only when at least one tax flag is active.
   const taxBreakdown: TaxBreakdown | null =
-    (parsed.transaction_type === "inflow" && projectId &&
-     (effectiveTax.enable_vat || effectiveTax.enable_wht))
+    effectiveTax && (effectiveTax.enable_vat || effectiveTax.enable_wht)
       ? computeTaxBreakdown(parsed.amount, effectiveTax)
       : null;
 
@@ -983,21 +955,6 @@ async function runPipeline(
         `   → Remit VAT to FIRS · WHT Credit: ${fmtNGN(taxBreakdown.tax_wht_amount)}`,
       );
     }
-  }
-
-  // ── Input VAT note (business-level outflow deductibility) ────────────────
-  // cogs and opex are the two tags the get_tax_summary RPC counts as Input VAT.
-  const isInputVatEligible =
-    (bizRow?.enable_vat ?? false) &&
-    parsed.transaction_type === "outflow" &&
-    (parsed.financial_tag === "cogs" || parsed.financial_tag === "opex");
-
-  if (isInputVatEligible) {
-    const bizVatRate = bizRow?.default_vat_rate ?? 7.5;
-    lines.push(
-      "",
-      `🧾 VAT Deductible: This expense reduces your Input VAT on the dashboard (${bizVatRate}% of ${fmtNGN(parsed.amount)}).`,
-    );
   }
 
   return lines.join("\n");
