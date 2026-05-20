@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import BusinessSettings from "@/components/BusinessSettings";
+import ReminderSettings from "@/components/ReminderSettings";
 import TransactionModal from "@/components/TransactionModal";
 import InvoiceModal from "@/components/InvoiceModal";
 import InvoiceList from "@/components/InvoiceList";
@@ -732,6 +733,7 @@ export default function DashboardPage() {
   const [analyticsProjectName, setAnalyticsProjectName] = useState<string | null>(null);
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showReminderSettings, setShowReminderSettings] = useState(false);
   const [projectsRefreshKey, setProjectsRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -826,6 +828,7 @@ export default function DashboardPage() {
           setSidebarOpen(false);
         }}
         onSettingsClick={() => setShowSettings(true)}
+        onReminderSettingsClick={() => setShowReminderSettings(true)}
         projectsRefreshKey={projectsRefreshKey}
         activeProjectId={analyticsProjectId}
       />
@@ -1153,6 +1156,9 @@ export default function DashboardPage() {
       )}
       {showSettings && (
         <BusinessSettings onClose={() => setShowSettings(false)} />
+      )}
+      {showReminderSettings && (
+        <ReminderSettings onClose={() => setShowReminderSettings(false)} />
       )}
     </div>
   );
