@@ -327,10 +327,10 @@ function exportPDF(
 </body>
 </html>`;
 
-  const blob = new Blob([html], { type: "application/pdf" });
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `${workspaceName.replace(/\s+/g, "_")}${activeProjectName ? `_${activeProjectName.replace(/\s+/g, "_")}` : ""}_Performance_Report.pdf`;
+  link.download = `${workspaceName.replace(/\s+/g, "_")}${activeProjectName ? `_${activeProjectName.replace(/\s+/g, "_")}` : ""}_Performance_Report.html`;
   document.body.appendChild(link);
   link.click();
   URL.revokeObjectURL(link.href);
