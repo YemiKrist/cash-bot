@@ -106,14 +106,7 @@ function SummaryCard({ label, value, change, positive, sub }: SummaryCardProps) 
     <div className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{label}</p>
       <p className={`mt-3 text-2xl font-bold leading-none ${valueColor}`}>
-        {value.startsWith("₦") ? (
-          <>
-            <span className="font-sans">₦</span>
-            <span className="font-mono">{value.slice(1)}</span>
-          </>
-        ) : (
-          <span className="font-mono">{value}</span>
-        )}
+        <span className="font-mono">{value}</span>
       </p>
       <div className="mt-2">
         {change != null ? (

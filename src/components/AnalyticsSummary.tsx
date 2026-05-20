@@ -50,14 +50,7 @@ function StatCard({ label, value, positive, sub }: CardProps) {
         {label}
       </p>
       <p className={`mt-3 text-2xl font-bold leading-none ${valueColor}`}>
-        {value.startsWith("₦") ? (
-          <>
-            <span className="font-sans">₦</span>
-            <span className="font-mono">{value.slice(1)}</span>
-          </>
-        ) : (
-          <span className="font-mono">{value}</span>
-        )}
+        <span className="font-mono">{value}</span>
       </p>
       {sub && <p className="mt-2 text-xs text-zinc-600">{sub}</p>}
     </div>
