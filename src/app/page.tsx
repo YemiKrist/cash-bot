@@ -752,10 +752,13 @@ export default function DashboardPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [showReminderSettings, setShowReminderSettings] = useState(false);
   const [projectsRefreshKey, setProjectsRefreshKey] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [authLoading, user, router]);
+
+  useEffect(() => { setSearchQuery(""); }, [activeBusiness, activeTab]);
 
   useEffect(() => {
     setActiveTab("transactions");
@@ -816,6 +819,18 @@ export default function DashboardPage() {
       </div>
     );
   }
+
+  const filteredTransactions = searchQuery.trim()
+    ? transactions.filter((tx) => {
+        const q = searchQuery.toLowerCase();
+        return (
+          tx.description?.toLowerCase().includes(q) ||
+          tx.financial_tag?.toLowerCase().includes(q) ||
+          tx.transaction_type?.toLowerCase().includes(q) ||
+          tx.amount?.toString().includes(q)
+        );
+      })
+    : transactions;
 
   async function handleDeleteTx(tx: Transaction) {
     await supabase.from("transactions").delete().eq("id", tx.id);
@@ -1073,6 +1088,40 @@ export default function DashboardPage() {
         <div className="flex-1 overflow-y-auto px-4 py-4 pb-28 lg:px-8 lg:py-6 lg:pb-6">
           {!activeBusiness || activeTab === "transactions" ? (
             <>
+              {/* Search bar — only when data is loaded and there's something to search */}
+              {!loadingTx && transactions.length > 0 && (
+                <div className="relative mb-4">
+                  <svg
+                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
+                    viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                    strokeLinecap="round" strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search transactions by description, tag, or keyword..."
+                    className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 pl-10 pr-10 text-sm text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-zinc-500 transition hover:text-zinc-200"
+                      aria-label="Clear search"
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Mobile card list */}
               <div className="space-y-2 lg:hidden">
                 {loadingTx ? (
@@ -1091,14 +1140,30 @@ export default function DashboardPage() {
                     <p className="text-base font-semibold text-zinc-400">No transactions yet</p>
                     <p className="mt-1 text-sm text-zinc-600">Tap + to record your first entry</p>
                   </div>
+                ) : filteredTransactions.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <p className="text-sm text-zinc-500">
+                      🔍 No matching transactions discovered for{" "}
+                      <span className="font-medium text-zinc-300">"{searchQuery}"</span>.
+                    </p>
+                  </div>
                 ) : (
-                  transactions.map((tx) => <TransactionCard key={tx.id} tx={tx} onEdit={setEditingTx} onDelete={handleDeleteTx} />)
+                  filteredTransactions.map((tx) => <TransactionCard key={tx.id} tx={tx} onEdit={setEditingTx} onDelete={handleDeleteTx} />)
                 )}
               </div>
 
               {/* Desktop table */}
               <div className="hidden lg:block">
-                <LedgerTable transactions={transactions} loading={loadingTx} onEdit={setEditingTx} onDelete={handleDeleteTx} />
+                {!loadingTx && searchQuery.trim() && filteredTransactions.length === 0 ? (
+                  <div className="flex items-center justify-center rounded-2xl border border-dashed border-zinc-800 py-20">
+                    <p className="text-sm text-zinc-500">
+                      🔍 No matching transactions discovered for{" "}
+                      <span className="font-medium text-zinc-300">"{searchQuery}"</span>.
+                    </p>
+                  </div>
+                ) : (
+                  <LedgerTable transactions={filteredTransactions} loading={loadingTx} onEdit={setEditingTx} onDelete={handleDeleteTx} />
+                )}
               </div>
             </>
           ) : activeTab === "invoices" ? (

@@ -102,33 +102,38 @@ function BusinessSummary({ transactions }: { transactions: Transaction[] }) {
 // ── Personal cards ────────────────────────────────────────────────────────────
 
 function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
-  const { savingsRate, survivalBurn, discretionaryPool } = useMemo(() => {
+  const { totalIn, totalOut, net, savingsRate } = useMemo(() => {
     const totalIn = sumWhere(transactions, "inflow");
     const totalOut = sumWhere(transactions, "outflow");
-    const savingsRate =
-      totalIn === 0 ? 0 : ((totalIn - totalOut) / totalIn) * 100;
-    const survivalBurn = sumWhere(transactions, "outflow", "personal_essential");
-    const discretionaryPool = sumWhere(transactions, "outflow", "personal_luxury");
-    return { savingsRate, survivalBurn, discretionaryPool };
+    const net = totalIn - totalOut;
+    const savingsRate = totalIn === 0 ? 0 : (net / totalIn) * 100;
+    return { totalIn, totalOut, net, savingsRate };
   }, [transactions]);
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+      <StatCard
+        label="Total Inflows"
+        value={formatCurrency(totalIn)}
+        positive={totalIn > 0}
+        sub="All income received"
+      />
+      <StatCard
+        label="Total Outflows"
+        value={formatCurrency(Math.abs(totalOut))}
+        sub="All expenses paid"
+      />
+      <StatCard
+        label="Net Cash Flow"
+        value={formatCurrency(net)}
+        positive={net >= 0}
+        sub="Inflows − Outflows"
+      />
       <StatCard
         label="Savings Rate"
         value={`${savingsRate.toFixed(1)}%`}
         positive={savingsRate >= 0}
         sub="(Inflows − Outflows) ÷ Inflows"
-      />
-      <StatCard
-        label="Survival Burn Core"
-        value={formatCurrency(survivalBurn)}
-        sub="Essential personal outflows"
-      />
-      <StatCard
-        label="Discretionary Pool"
-        value={formatCurrency(discretionaryPool)}
-        sub="Luxury personal outflows"
       />
     </div>
   );
