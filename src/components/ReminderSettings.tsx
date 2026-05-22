@@ -50,6 +50,8 @@ export default function ReminderSettings({ onClose }: Props) {
   const [evening,   setEvening]   = useState(18);
   const [saveOk,    setSaveOk]    = useState(false);
   const [error,     setError]     = useState<string | null>(null);
+  const [testOk,    setTestOk]    = useState(false);
+  const [testSending, setTestSending] = useState(false);
 
   // Keyboard dismiss
   useEffect(() => {
@@ -114,6 +116,34 @@ export default function ReminderSettings({ onClose }: Props) {
 
     setSaveOk(true);
     setTimeout(() => setSaveOk(false), 2500);
+  }
+
+  async function handleTest() {
+    setTestSending(true);
+    setTestOk(false);
+    setError(null);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? "";
+
+      const res = await fetch("/api/cron/send-reminders?test=true", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const json = await res.json() as { error?: string };
+        setError(json.error ?? `Request failed (${res.status}).`);
+        return;
+      }
+
+      setTestOk(true);
+      setTimeout(() => setTestOk(false), 3000);
+    } catch {
+      setError("Network error — could not reach the server.");
+    } finally {
+      setTestSending(false);
+    }
   }
 
   return (
@@ -254,6 +284,21 @@ export default function ReminderSettings({ onClose }: Props) {
                   Reminder settings saved successfully.
                 </p>
               )}
+              {testOk && (
+                <p className="rounded-xl border border-emerald-800 bg-emerald-950/60 px-4 py-3 text-xs text-emerald-400">
+                  Test reminder requested!
+                </p>
+              )}
+
+              {/* Test trigger */}
+              <button
+                type="button"
+                onClick={handleTest}
+                disabled={testSending}
+                className="w-full px-4 py-2 text-xs font-medium rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {testSending ? "Sending…" : "⚡ Send Test Reminder"}
+              </button>
 
               {/* Actions */}
               <div className="flex gap-2 pb-2">

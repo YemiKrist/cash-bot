@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL          = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const TWILIO_ACCOUNT_SID    = process.env.TWILIO_ACCOUNT_SID!;
-const TWILIO_AUTH_TOKEN     = process.env.TWILIO_AUTH_TOKEN!;
-const TWILIO_WHATSAPP_FROM  = process.env.TWILIO_WHATSAPP_FROM!; // e.g. "whatsapp:+14155238886"
-const CRON_SECRET           = process.env.CRON_SECRET!;
+// Read at call time so missing vars produce a clear 500 rather than a cryptic client error.
+function requireEnv(name: string): string {
+  const val = process.env[name];
+  if (!val) throw new Error(`[Env] Missing required variable: ${name}`);
+  return val;
+}
 
 interface ReminderRow {
   phone_number: string;
-  morning_hour: number;
-  evening_hour: number;
+  morning_hour: number | null;
+  evening_hour: number | null;
   timezone:     string;
 }
 
@@ -20,8 +20,8 @@ function localHour(timezone: string): number {
   try {
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
-      hour: "numeric",
-      hour12: false,
+      hour:     "numeric",
+      hour12:   false,
     }).formatToParts(new Date());
     return parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
   } catch {
@@ -29,17 +29,40 @@ function localHour(timezone: string): number {
   }
 }
 
-async function sendWhatsApp(to: string, body: string): Promise<void> {
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-  const creds = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+// Strict number equality — prevents hour 0 (12:00 AM) from being falsy-skipped.
+function hourMatches(stored: number | null, current: number): boolean {
+  return stored !== null && stored !== undefined && stored === current;
+}
+
+function toWhatsAppNumber(raw: string): string {
+  const trimmed = raw.trim();
+  return trimmed.startsWith("whatsapp:") ? trimmed : `whatsapp:${trimmed}`;
+}
+
+async function sendWhatsApp(
+  accountSid: string,
+  authToken:  string,
+  fromNumber: string,
+  to:         string,
+  body:       string,
+): Promise<void> {
+  const url   = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+  const creds = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+
+  const formattedFrom = toWhatsAppNumber(fromNumber);
+  const formattedTo   = toWhatsAppNumber(to);
 
   const res = await fetch(url, {
-    method: "POST",
+    method:  "POST",
     headers: {
-      Authorization: `Basic ${creds}`,
+      Authorization:  `Basic ${creds}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: new URLSearchParams({ From: TWILIO_WHATSAPP_FROM, To: to, Body: body }).toString(),
+    body: new URLSearchParams({
+      From: formattedFrom,
+      To:   formattedTo,
+      Body: body,
+    }).toString(),
   });
 
   if (!res.ok) {
@@ -66,18 +89,90 @@ const EVENING_MSG = [
   'Example: "Spent 8k on diesel for the generator — Favsys"',
 ].join("\n");
 
-// Vercel calls this endpoint every hour (see vercel.json).
-// It sends WhatsApp reminders to every user whose morning_hour or
-// evening_hour matches the current local hour in their timezone.
+// ── GET /api/cron/send-reminders ──────────────────────────────────────────────
+//
+// Normal mode  (called by Vercel/external cron):
+//   Authorization: Bearer <CRON_SECRET>
+//   Sends to every enabled user whose morning_hour or evening_hour matches now.
+//
+// Test mode  (?test=true, called from the dashboard):
+//   Authorization: Bearer <Supabase user JWT>
+//   Skips hour matching and sends the morning message immediately to only
+//   the authenticated user's phone number.
+//
 export async function GET(req: NextRequest) {
-  // Vercel automatically attaches "Authorization: Bearer <CRON_SECRET>"
-  if (req.headers.get("authorization") !== `Bearer ${CRON_SECRET}`) {
+  // ── Resolve and guard all env vars at request time ──────────────────────────
+  let SUPABASE_URL: string, SUPABASE_ANON_KEY: string, SUPABASE_SERVICE_KEY: string;
+  let TWILIO_ACCOUNT_SID: string, TWILIO_AUTH_TOKEN: string, TWILIO_WHATSAPP_FROM: string;
+  let CRON_SECRET: string;
+
+  try {
+    SUPABASE_URL         = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
+    SUPABASE_ANON_KEY    = requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    SUPABASE_SERVICE_KEY = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+    TWILIO_ACCOUNT_SID   = requireEnv("TWILIO_ACCOUNT_SID");
+    TWILIO_AUTH_TOKEN    = requireEnv("TWILIO_AUTH_TOKEN");
+    TWILIO_WHATSAPP_FROM = requireEnv("TWILIO_WHATSAPP_FROM");
+    CRON_SECRET          = requireEnv("CRON_SECRET");
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[Cron Initialization Error]", msg);
+    return NextResponse.json({ error: "Server infrastructure misconfiguration", detail: msg }, { status: 500 });
+  }
+
+  const isTest     = req.nextUrl.searchParams.get("test") === "true";
+  const authHeader = req.headers.get("authorization");
+
+  const service = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+  // ── Test mode: authenticate via Supabase JWT, scope to caller only ──────────
+  if (isTest) {
+    const token = (authHeader ?? "").replace(/^Bearer\s+/i, "");
+    const anon  = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data: { user } } = await anon.auth.getUser(token);
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: row, error } = await service
+      .from("reminder_settings")
+      .select("phone_number, morning_hour, evening_hour, timezone")
+      .eq("user_id", user.id)
+      .maybeSingle() as { data: ReminderRow | null; error: unknown };
+
+    if (error) {
+      console.error("[send-reminders/test] DB error:", error);
+      return NextResponse.json({ error: "DB error" }, { status: 500 });
+    }
+    if (!row) {
+      return NextResponse.json(
+        { error: "No reminder profile found. Send a WhatsApp message to CashBot first." },
+        { status: 404 },
+      );
+    }
+
+    try {
+      await sendWhatsApp(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM, row.phone_number, MORNING_MSG);
+      console.log(`[send-reminders/test] ✓ ${row.phone_number}`);
+      return NextResponse.json({ sent: 1, test: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[send-reminders/test] ✗ ${row.phone_number}:`, msg);
+      return NextResponse.json({ error: msg }, { status: 502 });
+    }
+  }
+
+  // ── Normal cron mode: authenticate via CRON_SECRET ─────────────────────────
+  const expectedAuth = `Bearer ${CRON_SECRET}`.trim();
+  if (!authHeader || authHeader.trim() !== expectedAuth) {
+    console.error(
+      `[Cron Auth Failure] Expected: Bearer ${CRON_SECRET ? "Present" : "MISSING FROM ENVIRONMENT"}, Received: ${authHeader ?? "(none)"}`,
+    );
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-
-  const { data: rows, error } = await supabase
+  const { data: rows, error } = await service
     .from("reminder_settings")
     .select("phone_number, morning_hour, evening_hour, timezone")
     .eq("enabled", true) as { data: ReminderRow[] | null; error: unknown };
@@ -91,19 +186,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ sent: 0, message: "No active reminders" });
   }
 
-  const sent: string[]   = [];
+  const sent:   string[] = [];
   const failed: string[] = [];
 
   await Promise.allSettled(
     rows.map(async (row) => {
       const hour      = localHour(row.timezone);
-      const isMorning = hour === row.morning_hour;
-      const isEvening = hour === row.evening_hour;
+      const isMorning = hourMatches(row.morning_hour, hour);
+      const isEvening = hourMatches(row.evening_hour, hour);
 
       if (!isMorning && !isEvening) return;
 
       try {
-        await sendWhatsApp(row.phone_number, isMorning ? MORNING_MSG : EVENING_MSG);
+        await sendWhatsApp(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM, row.phone_number, isMorning ? MORNING_MSG : EVENING_MSG);
         sent.push(row.phone_number);
         console.log(`[send-reminders] ✓ ${row.phone_number} (${isMorning ? "morning" : "evening"})`);
       } catch (err) {
