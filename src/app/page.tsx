@@ -233,7 +233,7 @@ function TxMenu({
     <div ref={ref} className="relative">
       <button
         onClick={() => { setOpen((o) => !o); setConfirming(false); }}
-        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200 ${tableRow ? "opacity-0 group-hover:opacity-100" : ""}`}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 opacity-0 transition group-hover:opacity-100 hover:bg-zinc-700 hover:text-zinc-200"
         aria-label="Transaction options"
       >
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
@@ -312,7 +312,7 @@ function TransactionCard({
 }) {
   const isInflow = tx.transaction_type === "inflow";
   return (
-    <div className="flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-3.5 transition-colors active:bg-zinc-800">
+    <div className="group flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-3.5 transition-colors active:bg-zinc-800">
       <div
         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
           isInflow ? "bg-emerald-950/80" : "bg-red-950/80"
