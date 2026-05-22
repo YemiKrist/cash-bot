@@ -36,6 +36,76 @@ function twimlMessage(body: string): Response {
   });
 }
 
+function twimlMessageWithButtons(
+  body: string,
+  buttons: { title: string; payload: string }[],
+): Response {
+  const btnXml = buttons
+    .map((b) => `<Button payload="${escapeXml(b.payload)}">${escapeXml(b.title)}</Button>`)
+    .join("");
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8"?><Response><Message><Body>${escapeXml(body)}</Body><Action>${btnXml}</Action></Message></Response>`;
+  return new Response(xml, {
+    status: 200,
+    headers: { "Content-Type": "text/xml; charset=utf-8" },
+  });
+}
+
+interface ListRow {
+  id: string;       // sent back as ButtonPayload when the user selects the row
+  title: string;    // max 24 chars — WhatsApp enforced limit
+  description: string;
+}
+
+function twimlMessageWithList(
+  body: string,
+  buttonText: string,
+  sectionTitle: string,
+  rows: ListRow[],
+): Response {
+  const rowXml = rows
+    .map(
+      (r) =>
+        `<Row id="${escapeXml(r.id)}" title="${escapeXml(r.title)}" description="${escapeXml(r.description)}"/>`,
+    )
+    .join("");
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8"?><Response><Message><Body>${escapeXml(body)}</Body><Action><List buttonText="${escapeXml(buttonText)}"><Section title="${escapeXml(sectionTitle)}">${rowXml}</Section></List></Action></Message></Response>`;
+  return new Response(xml, {
+    status: 200,
+    headers: { "Content-Type": "text/xml; charset=utf-8" },
+  });
+}
+
+// Tag selection rows — each id is parsed by parseButtonPayload as TAG_SELECT|<tag>.
+const TAG_SELECTION_ROWS: ListRow[] = [
+  {
+    id:          "TAG_SELECT|revenue",
+    title:       "💰 Sales & Income",
+    description: "Customer payments, daily shop sales, or contract payouts",
+  },
+  {
+    id:          "TAG_SELECT|cogs",
+    title:       "📦 Stock & Materials",
+    description: "Wholesale restocking, raw materials, or direct project inputs",
+  },
+  {
+    id:          "TAG_SELECT|opex",
+    title:       "⚡ Daily Running Costs",
+    description: "Generator fuel, transport, data/airtime, ads, or daily logistics",
+  },
+  {
+    id:          "TAG_SELECT|fixed_cost",
+    title:       "📅 Monthly Overheads",
+    description: "Shop/office rent, regular staff salaries, or recurring bills",
+  },
+  {
+    id:          "TAG_SELECT|capex",
+    title:       "🔌 Equipment & Assets",
+    description: "Buying long-term assets like generators, laptops, or machinery",
+  },
+];
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type TransactionType = "inflow" | "outflow";
@@ -43,6 +113,8 @@ type FinancialTag =
   | "revenue"
   | "cogs"
   | "opex"
+  | "fixed_cost"
+  | "capex"
   | "personal_essential"
   | "personal_luxury";
 
@@ -54,6 +126,7 @@ interface ParsedTransaction {
   entity_prefix_guess: string | null;
   project_name: string | null;
   is_corporate_ambiguous: boolean;
+  is_tag_ambiguous?: boolean;   // true when Gemini can't confidently assign a tag
   is_valid_transaction: boolean;
 }
 
@@ -312,6 +385,8 @@ async function handleCancelCommand(
 
 type ButtonAction =
   | { kind: "cancel_last" }
+  | { kind: "change_workspace"; transactionId: string }  // re-routes an already-committed tx
+  | { kind: "tag_select"; tag: FinancialTag }            // category selection from the list menu
   | { kind: "confirm_personal"; amount: number; tag: FinancialTag; description: string }
   | { kind: "confirm_business"; businessId: string; amount: number; tag: FinancialTag; description: string }
   | { kind: "select_scope_personal" }                    // loads pending tx from session → Personal Ledger
@@ -321,6 +396,13 @@ function parseButtonPayload(payload: string): ButtonAction | null {
   const p = payload.trim();
 
   if (p === "CANCEL_LAST_TX") return { kind: "cancel_last" };
+
+  const changeWsM = p.match(/^change_workspace_(.+)$/);
+  if (changeWsM) return { kind: "change_workspace", transactionId: changeWsM[1] };
+
+  // Tag selection from the list menu — payload format: TAG_SELECT|<tag>
+  const tagSelM = p.match(/^TAG_SELECT\|(.+)$/);
+  if (tagSelM) return { kind: "tag_select", tag: tagSelM[1] as FinancialTag };
 
   // Scope-selection buttons sent alongside the ambiguity clarification message.
   if (p === "SELECT_PERSONAL") return { kind: "select_scope_personal" };
@@ -353,18 +435,21 @@ function parseButtonPayload(payload: string): ButtonAction | null {
   return null;
 }
 
-// ── Phase 2: Regex shortcut matching ─────────────────────────────────────────
-// Handles concise messages like "15k fuel" or "15k fuel for parkview" without
-// an AI call. After keyword detection any remaining text is extracted as a
-// potential_scope_text and resolved against the DB at the call site — if no
-// match is found the message falls cleanly through to Phase 4 (Gemini).
+// ── Phase 2: 3-Tier shorthand + comma protocol ───────────────────────────────
+//
+// Tier 1 — Simple shorthand (no comma): "15k fuel", "5k uber"
+//   Amount + keyword → Personal Ledger. No AI, no DB lookup.
+//
+// Tier 2 — Comma protocol: "15k, description" / "15k, description, scope"
+//   2-part → Personal Ledger.  3-part → DB lookup for scope then commit.
+//
+// Tier 3 — Natural text (no comma, no keyword match) → falls to Gemini.
 
 interface ShortcutMatch {
-  amount:             number;
-  transaction_type:   TransactionType;
-  financial_tag:      FinancialTag;
-  label:              string;
-  potentialScopeText: string | null; // cleaned remaining text after keyword + stopword removal
+  amount:           number;
+  transaction_type: TransactionType;
+  financial_tag:    FinancialTag;
+  label:            string;
 }
 
 const SHORTCUT_KEYWORDS: {
@@ -383,51 +468,11 @@ const SHORTCUT_KEYWORDS: {
   { pattern: /\b(received|payment|paid\s*me|client\s*paid|invoice\s*paid)\b/i, type: "inflow",  tag: "revenue",            label: "Income"       },
 ];
 
-// Matches: {digits}[,digits][k?] {rest}  — amount must come first.
+// Matches Tier 1 messages: {digits}[.digits][k?] then a space then keyword words.
 const SHORTCUT_RE = /^(\d+(?:[.,]\d+)?)(k)?\s+(.+)$/i;
 
-// Prepositions/articles stripped when extracting scope from the remainder.
-const SCOPE_STOPWORDS_RE = /\b(for|to|on|in|at|with|the|a|an|my|our|this|that|it|about|some|just|also|even|still)\b/gi;
-
-// Pure temporal and filler words that describe timing, not a workspace scope.
-// Presence of only these words → no scope hint, default to Personal Ledger.
-const SCOPE_TEMPORAL = new Set([
-  "today", "yesterday", "now", "again", "late", "early",
-  "morning", "evening", "night", "week", "month", "year",
-  "last", "next", "recent", "soon", "later", "ago",
-]);
-
-// Extracts a cleaned potential scope string from the full rest phrase.
-// Priority: explicit dash/em-dash separator > keyword-removal approach.
-//   "fuel - Parkview project"        → "Parkview project"
-//   "for fuel for parkview project"  → "parkview project"
-//   "fuel today"                     → null  (temporal word only)
-//   "fuel"                           → null  (nothing remaining)
-function extractPotentialScope(rest: string, kwPattern: RegExp): string | null {
-  // 1. Explicit separator is the strongest signal.
-  const dashM = rest.match(/[-—–]\s*(.+)$/);
-  if (dashM) return dashM[1].trim();
-
-  // 2. Remove the matched keyword tokens and then strip stopwords.
-  const stripped = rest
-    .replace(kwPattern, "")
-    .replace(SCOPE_STOPWORDS_RE, "")
-    .trim()
-    .replace(/\s+/g, " ");
-
-  if (stripped.length < 2) return null;
-
-  // 3. Discard result if every remaining word is a temporal/filler word.
-  const significant = stripped
-    .split(/\s+/)
-    .filter((w) => w.length >= 2 && !SCOPE_TEMPORAL.has(w.toLowerCase()));
-
-  return significant.length > 0 ? significant.join(" ") : null;
-}
-
 function matchShortcut(text: string): ShortcutMatch | null {
-  const t = text.trim();
-  const m = t.match(SHORTCUT_RE);
+  const m = text.trim().match(SHORTCUT_RE);
   if (!m) return null;
 
   const rawNum = parseFloat(m[1].replace(",", "."));
@@ -436,22 +481,27 @@ function matchShortcut(text: string): ShortcutMatch | null {
 
   for (const kw of SHORTCUT_KEYWORDS) {
     if (kw.pattern.test(rest)) {
-      return {
-        amount,
-        transaction_type:   kw.type,
-        financial_tag:      kw.tag,
-        label:              kw.label,
-        potentialScopeText: extractPotentialScope(rest, kw.pattern),
-      };
+      return { amount, transaction_type: kw.type, financial_tag: kw.tag, label: kw.label };
     }
   }
-
   return null;
+}
+
+// Parses a standalone amount token like "15k", "5.5k", "200" from a comma part.
+function parseAmountToken(token: string): number | null {
+  const m = token.trim().match(/^(\d+(?:[.,]\d+)?)(k)?$/i);
+  if (!m) return null;
+  const num = parseFloat(m[1].replace(",", "."));
+  return m[2] ? num * 1000 : num;
 }
 
 // ── Phase 3: Session state ────────────────────────────────────────────────────
 
-type SessionState = "AWAITING_SCOPE_SELECTION" | "AWAITING_CANCEL_CONFIRMATION";
+type SessionState =
+  | "AWAITING_SCOPE_SELECTION"
+  | "AWAITING_CANCEL_CONFIRMATION"
+  | "AWAITING_WORKSPACE_SWITCH"
+  | "AWAITING_TAG_SELECTION";
 
 // Serialised inside user_sessions.context_json for AWAITING_SCOPE_SELECTION.
 interface PendingTransactionContext {
@@ -460,6 +510,21 @@ interface PendingTransactionContext {
   financial_tag:    FinancialTag;
   description:      string;
   raw_text:         string;
+}
+
+// Serialised inside user_sessions.context_json for AWAITING_WORKSPACE_SWITCH.
+interface PendingWorkspaceSwitchContext {
+  transactionId: string;
+}
+
+// Serialised inside user_sessions.context_json for AWAITING_TAG_SELECTION.
+interface PendingTagSelectionContext {
+  amount:              number;
+  transaction_type:    TransactionType;
+  description:         string;
+  entity_prefix_guess: string | null;
+  project_name:        string | null;
+  raw_text:            string;
 }
 
 interface UserSession {
@@ -497,7 +562,7 @@ async function saveSession(
   supabase: ReturnType<typeof createClient>,
   phoneNumber: string,
   state: SessionState,
-  context: PendingTransactionContext,
+  context: PendingTransactionContext | PendingWorkspaceSwitchContext | PendingTagSelectionContext,
 ): Promise<void> {
   try {
     await supabase.from("user_sessions").upsert(
@@ -583,7 +648,7 @@ async function handleSessionState(
       return {
         kind: "reply",
         message: [
-          "❓ I didn't recognise that workspace. Please reply with:",
+          "❓ I didn't recognise that business or project. Please reply with:",
           "",
           '• "personal" — Personal Ledger',
           bizLines,
@@ -607,6 +672,121 @@ async function handleSessionState(
     };
 
     return { kind: "route", parsed: syntheticParsed, businessId: resolvedBusinessId };
+  }
+
+  // ── AWAITING_WORKSPACE_SWITCH ────────────────────────────────────────────
+  if (session.current_state === "AWAITING_WORKSPACE_SWITCH") {
+    const ctx = (() => {
+      try { return session.context_json ? JSON.parse(session.context_json) as PendingWorkspaceSwitchContext : null; }
+      catch { return null; }
+    })();
+
+    if (!ctx?.transactionId) {
+      await clearSession(supabase, from);
+      return { kind: "reply", message: "⚠️ Session context lost. Please resend your original message." };
+    }
+
+    const t = rawText.trim();
+    let chosenBizId: string | null = null;
+    let chosenName = "Personal Ledger";
+
+    const numMatch = t.match(/^(\d+)$/);
+    if (numMatch) {
+      const idx = parseInt(numMatch[1]) - 1;
+      if (idx > 0 && idx <= businesses.length) {
+        const biz = businesses[idx - 1];
+        chosenBizId = biz.id;
+        chosenName  = biz.name;
+      }
+      // idx === 0 → Personal Ledger (defaults remain null)
+    } else {
+      const lower = t.toLowerCase();
+      if (!/^(personal|👤|personal\s+ledger)$/i.test(lower)) {
+        const match = businesses.find(
+          (b) => b.name.toLowerCase().includes(lower) || lower.includes(b.name.toLowerCase()),
+        );
+        if (match) {
+          chosenBizId = match.id;
+          chosenName  = match.name;
+        } else {
+          return { kind: "reply", message: `❓ I didn't recognise "${t}". Please reply with a number from the list.` };
+        }
+      }
+    }
+
+    const { error: updateErr } = await supabase
+      .from("transactions")
+      .update({ business_id: chosenBizId })
+      .eq("id", ctx.transactionId) as { error: { message: string } | null };
+
+    await clearSession(supabase, from);
+
+    if (updateErr) {
+      console.error("[session/workspace_switch] update failed:", updateErr.message);
+      return { kind: "reply", message: `❌ Could not move transaction: ${updateErr.message}` };
+    }
+
+    console.log(`[session/workspace_switch] tx ${ctx.transactionId} → ${chosenName}`);
+    return { kind: "reply", message: `✅ Transaction moved to *${chosenName}*!` };
+  }
+
+  // ── AWAITING_TAG_SELECTION ───────────────────────────────────────────────
+  // Triggered after is_tag_ambiguous; user may reply with a number or name.
+  // List-item clicks arrive in Phase 1 (tag_select action) and bypass this branch.
+  if (session.current_state === "AWAITING_TAG_SELECTION") {
+    const ctx = (() => {
+      try { return session.context_json ? JSON.parse(session.context_json) as PendingTagSelectionContext : null; }
+      catch { return null; }
+    })();
+
+    if (!ctx) {
+      await clearSession(supabase, from);
+      return { kind: "reply", message: "⚠️ Session context lost. Please resend your original message." };
+    }
+
+    const t = rawText.trim().toLowerCase();
+    const TAG_MAP: Record<string, FinancialTag> = {
+      "1": "revenue",    "sales": "revenue",    "income": "revenue",
+      "2": "cogs",       "stock": "cogs",        "materials": "cogs",
+      "3": "opex",       "daily": "opex",        "running": "opex",
+      "4": "fixed_cost", "monthly": "fixed_cost","overheads": "fixed_cost",
+      "5": "capex",      "equipment": "capex",   "assets": "capex",
+    };
+    const chosenTag: FinancialTag | undefined = TAG_MAP[t];
+
+    if (!chosenTag) {
+      return {
+        kind: "reply",
+        message: "❓ Please reply with a number (1–5) or a keyword like \"stock\", \"equipment\", or \"income\".",
+      };
+    }
+
+    await clearSession(supabase, from);
+
+    let resolvedBizId: string | null = null;
+    if (ctx.entity_prefix_guess && businesses.length) {
+      const guess = ctx.entity_prefix_guess.toLowerCase();
+      const match = businesses.find(
+        (b) => b.name.toLowerCase().includes(guess) || guess.includes(b.name.toLowerCase()),
+      );
+      if (match) resolvedBizId = match.id;
+    }
+
+    return {
+      kind: "route",
+      parsed: {
+        amount:                ctx.amount,
+        transaction_type:      ctx.transaction_type,
+        financial_tag:         chosenTag,
+        description:           ctx.description,
+        entity_prefix_guess:   ctx.entity_prefix_guess,
+        project_name:          ctx.project_name,
+        is_corporate_ambiguous: false,
+        is_tag_ambiguous:      false,
+        is_valid_transaction:  true,
+      },
+      businessId: resolvedBizId,
+    };
   }
 
   // ── AWAITING_CANCEL_CONFIRMATION ─────────────────────────────────────────
@@ -668,15 +848,15 @@ async function resolveSessionWithBusiness(
 // ── System instructions ───────────────────────────────────────────────────────
 
 const SYSTEM_INSTRUCTION_TEXT = `
-You are a world-class accounting assistant for an entrepreneur who manages
-multiple business entities and personal finances in Nigeria.
+You are a world-class accounting assistant for Nigerian SMEs — retailers, traders,
+manufacturers, contractors, and service businesses.
 
 Analyze the conversational WhatsApp message and return a JSON object with
 exactly these fields:
 
   amount                 number         Monetary value in NGN (strip ₦ symbols and commas)
   transaction_type       string         "inflow" or "outflow"
-  financial_tag          string         One of: "revenue" | "cogs" | "opex" | "personal_essential" | "personal_luxury"
+  financial_tag          string         One of: "revenue" | "cogs" | "opex" | "fixed_cost" | "capex" | "personal_essential" | "personal_luxury"
   description            string         One clean sentence summarising the transaction
   entity_prefix_guess    string|null    The exact business name mentioned, or null if none stated
   project_name           string|null    The exact project, client engagement, or deliverable name
@@ -706,17 +886,33 @@ exactly these fields:
                                         a project name is explicitly stated (projects always belong to a
                                         business, so naming one is sufficient routing context), OR
                                         the transaction is an inflow/revenue.
+  is_tag_ambiguous       boolean        Set to true ONLY when you genuinely cannot determine the correct
+                                        financial_tag from the message — e.g. a purchase that could
+                                        equally be opex, cogs, or capex and the message gives no clear
+                                        signals. Set to false whenever you can confidently classify.
   is_valid_transaction   boolean        true if the message describes any financial transaction with a
                                         discernible monetary amount. Set to false when the message is a
                                         greeting, a single word, a question, chitchat, or any text that
                                         does not contain an amount and a financial event.
 
-Tag selection rules:
-  revenue            → money received for services or sales (always inflow)
-  cogs               → cost of goods sold, raw materials, production inputs (outflow)
-  opex               → business running costs — software, ads, salaries, rent, tools (outflow)
-  personal_essential → personal necessities — food, transport, healthcare, utilities (outflow)
-  personal_luxury    → personal discretionary — dining out, entertainment, fashion, travel (outflow)
+Tag selection rules (Nigerian SME context):
+  revenue       → money received for services, sales, or client payments (always inflow)
+  cogs          → buying inventory for resale, clearing or importing goods, purchasing raw
+                  materials or direct production inputs (e.g. fabric, cement, foodstuff wholesale,
+                  spare parts stock, goods for market). Always outflow.
+  capex         → acquiring long-term business assets that will be used repeatedly:
+                  generators, industrial machinery, vehicles, laptops, heavy tools, shop
+                  fit-outs, or any durable equipment. Always outflow.
+  opex          → day-to-day variable business running costs: generator fuel for operations,
+                  business transport/logistics, data/airtime, advertising, courier, packaging,
+                  casual labour, minor repairs. Always outflow.
+  fixed_cost    → recurring monthly overheads that are predictable: shop or office rent,
+                  permanent staff salaries, monthly utility bills, recurring retainer fees,
+                  subscription services. Always outflow.
+  personal_essential → personal necessities — food, personal transport, healthcare,
+                  household utilities, school fees, personal airtime. Always outflow.
+  personal_luxury    → personal discretionary spending — dining out, entertainment,
+                  fashion, holidays, gifts. Always outflow.
 
 IMPORTANT: When is_corporate_ambiguous is true, still populate amount, transaction_type,
 financial_tag, and description with your best guess — these will be used if the user
@@ -729,15 +925,15 @@ Return only the JSON object. No explanation, no markdown fencing.
 `.trim();
 
 const SYSTEM_INSTRUCTION_RECEIPT = `
-You are a world-class accounting assistant for an entrepreneur who manages
-multiple business entities and personal finances in Nigeria.
+You are a world-class accounting assistant for Nigerian SMEs — retailers, traders,
+manufacturers, contractors, and service businesses.
 
 You will receive a receipt or invoice image. Extract all relevant financial
 details and return a JSON object with exactly these fields:
 
   amount                 number         Grand total paid in NGN (strip ₦ symbols and commas)
   transaction_type       string         Always "outflow" for a receipt/purchase
-  financial_tag          string         One of: "revenue" | "cogs" | "opex" | "personal_essential" | "personal_luxury"
+  financial_tag          string         One of: "revenue" | "cogs" | "opex" | "fixed_cost" | "capex" | "personal_essential" | "personal_luxury"
   description            string         "{vendor_name} — {top line items summary}"
   entity_prefix_guess    string|null    Purchasing business name if visible on the receipt, else null
   project_name           string|null    Project or engagement name if printed on the receipt or
@@ -755,16 +951,26 @@ details and return a JSON object with exactly these fields:
                                         Set to false for clearly personal/consumer receipts (grocery
                                         supermarket, pharmacy, cinema, clothing retail) or when a
                                         business name is clearly printed as the buyer.
+  is_tag_ambiguous       boolean        Set to true ONLY when the receipt items make it genuinely
+                                        unclear whether to use cogs, opex, capex, or fixed_cost — e.g.
+                                        a mixed receipt with both consumables and durable goods. Set to
+                                        false when the category is clear from the items.
   is_valid_transaction   boolean        true if the image is a recognisable receipt, invoice, or financial
                                         document with a legible total amount. Set to false if the image is
                                         a selfie, screenshot of a chat, blank image, or otherwise contains
                                         no extractable financial data.
 
-Tag selection rules:
-  cogs               → purchased goods for resale or raw materials
-  opex               → business tools, software, office supplies, services
-  personal_essential → groceries, pharmacy, utilities, fuel, transport
-  personal_luxury    → restaurants, bars, entertainment, fashion, electronics
+Tag selection rules (Nigerian SME context):
+  cogs          → purchased goods for resale, cleared/imported goods, raw production materials
+                  (fabric, cement, foodstuff wholesale, spare parts stock, goods for market)
+  capex         → durable long-term assets: generators, machinery, vehicles, laptops, heavy
+                  tools, industrial equipment, shop/office fit-outs
+  opex          → day-to-day running costs: fuel, business transport, data, advertising,
+                  packaging, courier, minor repairs, casual labour
+  fixed_cost    → recurring monthly overheads: rent, permanent staff salaries, recurring
+                  utility bills, monthly subscription invoices
+  personal_essential → groceries, pharmacy, household utilities, personal transport
+  personal_luxury    → restaurants, bars, entertainment, fashion, electronics for personal use
 
 Return only the JSON object. No explanation, no markdown fencing.
 `.trim();
@@ -895,7 +1101,7 @@ async function runPipeline(
   from: string,
   mediaUrl: string | null,
   buttonPayload: string | null,
-): Promise<string | null> {
+): Promise<string | { kind: "committed"; text: string; transactionId: string } | null> {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   // Populated by Phase 1 or Phase 2 to skip the AI call entirely.
@@ -927,7 +1133,7 @@ async function runPipeline(
 
   if (!userId) {
     console.error("[pipeline] Cannot resolve user_id — sending setup prompt");
-    return "Setup incomplete. Please create your first workspace on the web dashboard before texting Cash Bot.";
+    return "Setup incomplete. Please create your first business on the web dashboard before texting Cash Bot.";
   }
 
   // ── Phase 1: Interactive button dispatch ─────────────────────────────────
@@ -976,79 +1182,164 @@ async function runPipeline(
           is_valid_transaction: true,
         };
         overrideBusinessId = action.businessId;
+      } else if (action.kind === "tag_select") {
+        console.log(`[router/P1] → tag_select: ${action.tag}`);
+        const session = await getSession(supabase, from);
+        if (!session || session.current_state !== "AWAITING_TAG_SELECTION") {
+          return "⚠️ No pending transaction found. Please resend your original message.";
+        }
+        const ctx = (() => {
+          try { return session.context_json ? JSON.parse(session.context_json) as PendingTagSelectionContext : null; }
+          catch { return null; }
+        })();
+        if (!ctx) {
+          await clearSession(supabase, from);
+          return "⚠️ Session context lost. Please resend your original message.";
+        }
+        await clearSession(supabase, from);
+
+        // Resolve businessId from entity_prefix_guess if present
+        let tagBizId: string | null = null;
+        if (ctx.entity_prefix_guess && businesses?.length) {
+          const guess = ctx.entity_prefix_guess.toLowerCase();
+          const match = businesses.find(
+            (b) => b.name.toLowerCase().includes(guess) || guess.includes(b.name.toLowerCase()),
+          );
+          if (match) tagBizId = match.id;
+        }
+
+        shortcutParsed = {
+          amount:                ctx.amount,
+          transaction_type:      ctx.transaction_type,
+          financial_tag:         action.tag,
+          description:           ctx.description,
+          entity_prefix_guess:   ctx.entity_prefix_guess,
+          project_name:          ctx.project_name,
+          is_corporate_ambiguous: false,
+          is_tag_ambiguous:      false,
+          is_valid_transaction:  true,
+        };
+        overrideBusinessId = tagBizId;
+
+      } else if (action.kind === "change_workspace") {
+        console.log(`[router/P1] → change_workspace, txId=${action.transactionId}`);
+        const wsLines = [
+          "🔁 Which business or project should this transaction be moved to?",
+          "",
+          "1. 👤 Personal Ledger",
+          ...(businesses ?? []).map((b, i) => `${i + 2}. 💼 ${b.name}`),
+          "",
+          "Reply with the number or name.",
+        ];
+        await saveSession(supabase, from, "AWAITING_WORKSPACE_SWITCH", {
+          transactionId: action.transactionId,
+        });
+        return wsLines.join("\n");
       }
     } else {
       console.log("[router/P1] unrecognised payload — falling through");
     }
   }
 
-  // ── Phase 2: Regex shortcut ───────────────────────────────────────────────
+  // ── Phase 2: 3-Tier shorthand + comma protocol ───────────────────────────
   if (!shortcutParsed && !mediaUrl) {
-    const sc = matchShortcut(rawText);
-    if (sc) {
-      console.log("[router/P2] shortcut match:", { amount: sc.amount, label: sc.label, scopeText: sc.potentialScopeText });
+    const trimmedText = rawText.trim();
+    const hasComma    = trimmedText.includes(",");
 
-      let p2BusinessId: string | null | undefined = undefined; // undefined = Personal Ledger
-      let p2ProjectName: string | null = null;
-      let p2Description = sc.label;
-      let p2Resolved = true; // set false to drop through to Gemini
+    if (hasComma) {
+      // ── Tier 2: Comma Protocol ──────────────────────────────────────────────
+      const parts  = trimmedText.split(/,\s*/);
+      const amount = parseAmountToken(parts[0] ?? "");
 
-      if (sc.potentialScopeText) {
-        const scopeTerm = sc.potentialScopeText.toLowerCase();
+      if (amount !== null && amount > 0 && parts.length >= 2) {
+        const description = (parts[1] ?? "").trim();
 
-        // Parallel lookup: businesses + projects in one round-trip.
-        const [bizResult, projResult] = await Promise.all([
-          supabase
-            .from("businesses")
-            .select("id, name")
-            .ilike("name", `%${scopeTerm}%`)
-            .limit(3) as Promise<{ data: { id: string; name: string }[] | null; error: unknown }>,
-          supabase
-            .from("projects")
-            .select("id, name, business_id")
-            .ilike("name", `%${scopeTerm}%`)
-            .limit(3) as Promise<{ data: { id: string; name: string; business_id: string }[] | null; error: unknown }>,
-        ]);
+        if (parts.length === 2) {
+          // 2-part: explicit Personal Ledger
+          console.log("[router/P2/T2] 2-part comma →", { amount, description });
+          shortcutParsed = {
+            amount,
+            transaction_type:      "outflow",
+            financial_tag:         "personal_essential",
+            description,
+            entity_prefix_guess:   null,
+            project_name:          null,
+            is_corporate_ambiguous: false,
+            is_valid_transaction:  true,
+          };
+          overrideBusinessId = null; // explicit Personal Ledger
 
-        if (bizResult.error)  console.error("[router/P2] business lookup error:", bizResult.error);
-        if (projResult.error) console.error("[router/P2] project lookup error:", projResult.error);
-
-        const bizMatch  = bizResult.data?.[0]  ?? null;
-        const projMatch = projResult.data?.[0] ?? null;
-
-        if (bizMatch) {
-          p2BusinessId  = bizMatch.id;
-          p2Description = `${sc.label} — ${bizMatch.name}`;
-          console.log(`[router/P2] business match → "${bizMatch.name}" (${bizMatch.id})`);
-        } else if (projMatch) {
-          p2BusinessId  = projMatch.business_id;
-          p2ProjectName = projMatch.name;
-          p2Description = `${sc.label} — ${projMatch.name}`;
-          console.log(`[router/P2] project match → "${projMatch.name}" (biz ${projMatch.business_id})`);
         } else {
-          // Scope text found but no DB match — let Gemini resolve contextually.
-          console.log(`[router/P2] no DB match for "${sc.potentialScopeText}" — deferring to AI`);
-          p2Resolved = false;
+          // 3-part: parallel DB lookup for scope
+          const scopeHint = (parts[2] ?? "").trim().toLowerCase();
+          console.log("[router/P2/T2] 3-part comma →", { amount, description, scopeHint });
+
+          const [bizResult, projResult] = await Promise.all([
+            supabase
+              .from("businesses")
+              .select("id, name")
+              .ilike("name", `%${scopeHint}%`)
+              .limit(3) as Promise<{ data: { id: string; name: string }[] | null; error: unknown }>,
+            supabase
+              .from("projects")
+              .select("id, name, business_id")
+              .ilike("name", `%${scopeHint}%`)
+              .limit(3) as Promise<{ data: { id: string; name: string; business_id: string }[] | null; error: unknown }>,
+          ]);
+
+          if (bizResult.error)  console.error("[router/P2/T2] business lookup error:", bizResult.error);
+          if (projResult.error) console.error("[router/P2/T2] project lookup error:", projResult.error);
+
+          const bizMatch  = bizResult.data?.[0]  ?? null;
+          const projMatch = projResult.data?.[0] ?? null;
+
+          let t2ProjectName: string | null = null;
+
+          if (bizMatch) {
+            overrideBusinessId = bizMatch.id;
+            console.log(`[router/P2/T2] business match → "${bizMatch.name}" (${bizMatch.id})`);
+          } else if (projMatch) {
+            overrideBusinessId = projMatch.business_id;
+            t2ProjectName      = projMatch.name;
+            console.log(`[router/P2/T2] project match → "${projMatch.name}" (biz ${projMatch.business_id})`);
+          } else {
+            // No match — default to Personal Ledger
+            overrideBusinessId = null;
+            console.log(`[router/P2/T2] no DB match for "${scopeHint}" — defaulting to Personal Ledger`);
+          }
+
+          shortcutParsed = {
+            amount,
+            transaction_type:      "outflow",
+            financial_tag:         "opex",
+            description,
+            entity_prefix_guess:   null,
+            project_name:          t2ProjectName,
+            is_corporate_ambiguous: false,
+            is_valid_transaction:  true,
+          };
         }
       }
-      // potentialScopeText === null → plain shortcut, no scope → Personal Ledger fast path.
+      // amount unparseable → fall through to Phase 3/4
 
-      if (p2Resolved) {
+    } else {
+      // ── Tier 1: Simple shorthand (no comma) ────────────────────────────────
+      const sc = matchShortcut(trimmedText);
+      if (sc) {
+        console.log("[router/P2/T1] shorthand match:", { amount: sc.amount, label: sc.label });
         shortcutParsed = {
           amount:                sc.amount,
           transaction_type:      sc.transaction_type,
           financial_tag:         sc.financial_tag,
-          description:           p2Description,
+          description:           sc.label,
           entity_prefix_guess:   null,
-          project_name:          p2ProjectName,
+          project_name:          null,
           is_corporate_ambiguous: false,
           is_valid_transaction:  true,
         };
-
-        if (p2BusinessId !== undefined) {
-          overrideBusinessId = p2BusinessId;
-        }
+        overrideBusinessId = null; // explicit Personal Ledger
       }
+      // no match → Tier 3 (falls through to Phase 3 session check then Phase 4 Gemini)
     }
   }
 
@@ -1127,7 +1418,7 @@ async function runPipeline(
     return [
       "ℹ️ I couldn't find a transaction amount in that message.",
       "",
-      "To log an expense, please resend the full sentence including the amount and workspace.",
+      "To log an expense, please resend the full sentence including the amount and business or project.",
       `Example: "Spent 55k on transportation for Favsys"`,
     ].join("\n");
   }
@@ -1155,7 +1446,7 @@ async function runPipeline(
     const bizLines = businesses?.map((b, i) => `${i + 2}. 💼 ${b.name}`).join("\n") ?? "";
 
     return [
-      `🤔 *Which workspace should I log this under?*`,
+      `🤔 *Which business or project should I log this under?*`,
       "",
       `💰 ${fmtNGN(parsed.amount)} — ${parsed.description}`,
       "",
@@ -1374,19 +1665,23 @@ async function runPipeline(
       : null;
 
   // ── Step G: Database ingestion ────────────────────────────────────────────
-  const { error: insertErr } = await supabase.from("transactions").insert({
-    user_id: userId,
-    business_id: businessId,
-    project_id: projectId,
-    phone_number: from,
-    amount: parsed.amount,
-    transaction_type: parsed.transaction_type,
-    financial_tag: parsed.financial_tag,
-    description: parsed.description,
-    raw_text: rawText,
-    media_storage_url: mediaStorageUrl,
-    created_at: new Date().toISOString(),
-  });
+  const { data: insertedTx, error: insertErr } = await supabase
+    .from("transactions")
+    .insert({
+      user_id: userId,
+      business_id: businessId,
+      project_id: projectId,
+      phone_number: from,
+      amount: parsed.amount,
+      transaction_type: parsed.transaction_type,
+      financial_tag: parsed.financial_tag,
+      description: parsed.description,
+      raw_text: rawText,
+      media_storage_url: mediaStorageUrl,
+      created_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single() as { data: { id: string } | null; error: { message: string } | null };
 
   if (insertErr) throw new Error(`DB insert failed: ${insertErr.message}`);
 
@@ -1479,8 +1774,29 @@ async function runPipeline(
     }
   }
 
-  return lines.join("\n");
+  lines.push(
+    "",
+    "───",
+    "Incorrect category? Reply with a number to change it:",
+    "1️⃣ Sales & Income",
+    "2️⃣ Stock & Materials",
+    "3️⃣ Daily Running Costs",
+    "4️⃣ Monthly Overheads",
+    "5️⃣ Equipment & Assets",
+  );
+
+  const txId = insertedTx?.id;
+  return txId ? { kind: "committed", text: lines.join("\n"), transactionId: txId } : lines.join("\n");
 }
+
+// ── Single-digit category override map ───────────────────────────────────────
+const DIGIT_TAG_MAP: Record<string, { tag: FinancialTag; label: string; transaction_type: TransactionType }> = {
+  "1": { tag: "revenue",    label: "Sales & Income",      transaction_type: "inflow"  },
+  "2": { tag: "cogs",       label: "Stock & Materials",   transaction_type: "outflow" },
+  "3": { tag: "opex",       label: "Daily Running Costs", transaction_type: "outflow" },
+  "4": { tag: "fixed_cost", label: "Monthly Overheads",   transaction_type: "outflow" },
+  "5": { tag: "capex",      label: "Equipment & Assets",  transaction_type: "outflow" },
+};
 
 // ── HTTP handler ──────────────────────────────────────────────────────────────
 
@@ -1509,12 +1825,61 @@ Deno.serve(async (req: Request): Promise<Response> => {
   });
 
   try {
-    const reply = await runPipeline(rawText, from, mediaUrl, buttonPayload);
-    return twimlMessage(reply ?? "✅ Done.");
+    // ── Single-digit category override ─────────────────────────────────────
+    // Must be checked first — before any session or pipeline logic.
+    const digit = rawText.trim();
+    const tagChoice = DIGIT_TAG_MAP[digit];
+    if (/^[1-5]$/.test(digit) && tagChoice) {
+      console.log(`[digit-override] "${digit}" → ${tagChoice.tag} for ${from}`);
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+      const { data: lastTx } = await supabase
+        .from("transactions")
+        .select("id, amount")
+        .eq("phone_number", from)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle() as { data: { id: string; amount: number } | null };
+
+      if (!lastTx) {
+        return twimlMessage("⚠️ No recent transaction found to update.");
+      }
+
+      // Normalise sign: inflow → positive, outflow → negative.
+      const absAmount    = Math.abs(lastTx.amount);
+      const signedAmount = tagChoice.transaction_type === "inflow" ? absAmount : -absAmount;
+
+      const { error: updateErr } = await supabase
+        .from("transactions")
+        .update({
+          financial_tag:    tagChoice.tag,
+          transaction_type: tagChoice.transaction_type,
+          amount:           signedAmount,
+        })
+        .eq("id", lastTx.id)
+        .eq("phone_number", from) as { error: { message: string } | null };
+
+      if (updateErr) {
+        console.error("[digit-override] update failed:", updateErr.message);
+        return twimlMessage(`❌ Could not update category: ${updateErr.message}`);
+      }
+
+      console.log(`[digit-override] ✓ tx ${lastTx.id} updated to ${tagChoice.tag}`);
+      return twimlMessage(`✅ Category updated to ${tagChoice.label}!`);
+    }
+
+    // ── Standard pipeline ───────────────────────────────────────────────────
+    const result = await runPipeline(rawText, from, mediaUrl, buttonPayload);
+    if (result && typeof result === "object" && result.kind === "committed") {
+      return twimlMessageWithButtons(result.text, [
+        { title: "🗑️ Cancel",            payload: "CANCEL_LAST_TX"                                    },
+        { title: "📝 Switch Biz/Project", payload: `change_workspace_${result.transactionId}` },
+      ]);
+    }
+    return twimlMessage(typeof result === "string" ? result : "✅ Done.");
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error("[whatsapp-webhook] pipeline crash:", detail);
-    // Surface the raw error directly on the phone for fast debugging
     return twimlMessage(`⚠️ CashBot Error: ${detail}`);
   }
 });

@@ -200,6 +200,105 @@ function MobileSummaryBar({ transactions }: { transactions: Transaction[] }) {
   );
 }
 
+// ── Per-row action menu (⋮ hamburger) ────────────────────────────────────────
+
+function TxMenu({
+  tx,
+  onEdit,
+  onDelete,
+  tableRow = false,
+}: {
+  tx: Transaction;
+  onEdit?: (tx: Transaction) => void;
+  onDelete?: (tx: Transaction) => void;
+  tableRow?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setConfirming(false);
+      }
+    }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => { setOpen((o) => !o); setConfirming(false); }}
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200 ${tableRow ? "opacity-0 group-hover:opacity-100" : ""}`}
+        aria-label="Transaction options"
+      >
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5"  r="1.5" />
+          <circle cx="12" cy="12" r="1.5" />
+          <circle cx="12" cy="19" r="1.5" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 w-40 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+          {confirming ? (
+            <div className="px-3 py-3">
+              <p className="mb-2.5 text-xs font-medium text-zinc-300">Delete this transaction?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { onDelete?.(tx); setOpen(false); setConfirming(false); }}
+                  className="flex-1 rounded-lg bg-red-600 py-1.5 text-xs font-bold text-white transition hover:bg-red-500"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => setConfirming(false)}
+                  className="flex-1 rounded-lg bg-zinc-800 py-1.5 text-xs font-semibold text-zinc-300 transition hover:bg-zinc-700"
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {onEdit && (
+                <button
+                  onClick={() => { onEdit(tx); setOpen(false); }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-zinc-300 transition hover:bg-zinc-800"
+                >
+                  <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                  Edit
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  onClick={() => setConfirming(true)}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-red-400 transition hover:bg-zinc-800"
+                >
+                  <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                    <path d="M10 11v6M14 11v6" />
+                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                  </svg>
+                  Delete
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Mobile transaction card ───────────────────────────────────────────────────
 
 function TransactionCard({
@@ -211,7 +310,6 @@ function TransactionCard({
   onEdit?: (tx: Transaction) => void;
   onDelete?: (tx: Transaction) => void;
 }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const isInflow = tx.transaction_type === "inflow";
   return (
     <div className="flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-3.5 transition-colors active:bg-zinc-800">
@@ -255,52 +353,7 @@ function TransactionCard({
           {!isInflow && <span className="font-sans text-xs">−</span>}
           <Amt value={formatCurrency(tx.amount)} />
         </div>
-        {onEdit && (
-          <button
-            onClick={() => onEdit(tx)}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-zinc-700 hover:text-zinc-200"
-            aria-label="Edit transaction"
-          >
-            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-            </svg>
-          </button>
-        )}
-        {onDelete && (
-          confirmDelete ? (
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => { onDelete(tx); setConfirmDelete(false); }}
-                className="rounded-lg bg-red-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-500"
-              >
-                Delete
-              </button>
-              <button
-                onClick={() => setConfirmDelete(false)}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition hover:text-zinc-300"
-                aria-label="Cancel"
-              >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-red-950/60 hover:text-red-400"
-              aria-label="Delete transaction"
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                <path d="M10 11v6M14 11v6" />
-                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-              </svg>
-            </button>
-          )
-        )}
+        <TxMenu tx={tx} onEdit={onEdit} onDelete={onDelete} />
       </div>
     </div>
   );
@@ -319,7 +372,7 @@ function WorkspaceHeading({
   return (
     <div className="min-w-0">
       <p className="text-xs font-semibold uppercase tracking-widest text-emerald-400">
-        Active Workspace
+        Active Business/Project
       </p>
       <h1 className="mt-0.5 truncate text-2xl font-bold text-white">
         {projectName ? (
@@ -351,7 +404,6 @@ interface LedgerTableProps {
 }
 
 function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTableProps) {
-  const [confirmTxId, setConfirmTxId] = useState<number | null>(null);
   if (loading) {
     return (
       <div className="space-y-2">
@@ -431,55 +483,8 @@ function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTablePro
                 {tx.transaction_type === "outflow" && <span className="font-sans">−</span>}
                 <Amt value={formatCurrency(tx.amount)} />
               </td>
-              <td className="px-3 py-4">
-                <div className="flex items-center justify-end gap-1">
-                  {onEdit && (
-                    <button
-                      onClick={() => onEdit(tx)}
-                      className="rounded-lg p-1.5 text-zinc-600 opacity-0 transition hover:bg-zinc-700 hover:text-zinc-200 group-hover:opacity-100"
-                      aria-label="Edit transaction"
-                    >
-                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-                  )}
-                  {onDelete && (
-                    confirmTxId === tx.id ? (
-                      <div className="flex items-center gap-1 opacity-100">
-                        <button
-                          onClick={() => { onDelete(tx); setConfirmTxId(null); }}
-                          className="rounded-lg bg-red-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-red-500"
-                        >
-                          Delete
-                        </button>
-                        <button
-                          onClick={() => setConfirmTxId(null)}
-                          className="rounded-lg p-1.5 text-zinc-500 transition hover:text-zinc-300"
-                          aria-label="Cancel"
-                        >
-                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setConfirmTxId(tx.id)}
-                        className="rounded-lg p-1.5 text-zinc-600 opacity-0 transition hover:bg-red-950/60 hover:text-red-400 group-hover:opacity-100"
-                        aria-label="Delete transaction"
-                      >
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                          <path d="M10 11v6M14 11v6" />
-                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                        </svg>
-                      </button>
-                    )
-                  )}
-                </div>
+              <td className="px-3 py-4 text-right">
+                <TxMenu tx={tx} onEdit={onEdit} onDelete={onDelete} tableRow />
               </td>
             </tr>
           ))}
@@ -591,7 +596,7 @@ function WorkspaceMenu({
       <button
         onClick={openMenu}
         className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-700 text-zinc-400 transition hover:border-zinc-500 hover:text-white"
-        aria-label="Manage workspace"
+        aria-label="Manage business/project"
       >
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
           <circle cx="12" cy="5" r="1" fill="currentColor" stroke="none" />
@@ -916,7 +921,7 @@ export default function DashboardPage() {
                 {/* Dropdown panel */}
                 <div className="absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl">
                   <p className="px-3 pb-1 pt-3 text-[9px] font-bold uppercase tracking-widest text-zinc-500">
-                    Switch Workspace
+                    Switch Business/Project
                   </p>
                   <div className="p-1">
                     {/* Personal Ledger */}

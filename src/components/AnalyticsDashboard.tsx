@@ -819,7 +819,7 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
   if (!activeBusiness) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 py-20 text-center">
-        <p className="text-sm font-medium text-zinc-500">Select a business workspace to view analytics.</p>
+        <p className="text-sm font-medium text-zinc-500">Select a business or project to view analytics.</p>
       </div>
     );
   }

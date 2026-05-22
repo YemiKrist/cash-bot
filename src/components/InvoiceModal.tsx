@@ -187,7 +187,7 @@ export default function InvoiceModal({ onClose, onSaved, initialData }: Props) {
         <div className="overflow-y-auto">
           {!activeBusiness && (
             <div className="mx-6 mt-5 rounded-lg border border-amber-800 bg-amber-950/50 px-4 py-3 text-xs text-amber-400">
-              Switch to a business workspace to issue invoices.
+              Switch to a business or project to issue invoices.
             </div>
           )}
 

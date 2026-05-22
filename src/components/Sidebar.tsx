@@ -164,7 +164,7 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
         {/* Workspace list */}
         <nav className="flex-1 space-y-0.5 overflow-y-auto">
           <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
-            Workspaces
+            Business/Project
           </p>
 
           <button
