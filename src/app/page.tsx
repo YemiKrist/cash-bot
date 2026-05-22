@@ -1041,6 +1041,22 @@ export default function DashboardPage() {
               </button>
             )}
             <button
+              onClick={() => setActiveTab(activeTab === "analytics" ? "transactions" : "analytics")}
+              className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition ${
+                activeTab === "analytics"
+                  ? "border-emerald-500 text-emerald-400 hover:border-emerald-400"
+                  : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-white"
+              }`}
+              aria-label="Toggle analytics"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10" />
+                <line x1="12" y1="20" x2="12" y2="4" />
+                <line x1="6"  y1="20" x2="6"  y2="14" />
+              </svg>
+              Analytics
+            </button>
+            <button
               onClick={() => setShowTxModal(true)}
               className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 transition"
             >
@@ -1067,7 +1083,7 @@ export default function DashboardPage() {
         {/* ── Desktop tabs ─────────────────────────────────────────────────── */}
         {activeBusiness && (
           <div className="hidden overflow-x-auto border-b border-zinc-800 px-8 lg:flex">
-            {(["transactions", "invoices", "analytics"] as Tab[]).map((tab) => (
+            {(["transactions", "invoices"] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -1075,7 +1091,7 @@ export default function DashboardPage() {
                   activeTab === tab ? "text-white" : "text-zinc-500 hover:text-zinc-300"
                 }`}
               >
-                {tab === "transactions" ? "Transactions" : tab === "invoices" ? "Invoices & A/R" : "Analytics"}
+                {tab === "transactions" ? "Transactions" : "Invoices & A/R"}
                 {activeTab === tab && (
                   <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-emerald-400" />
                 )}
@@ -1086,7 +1102,22 @@ export default function DashboardPage() {
 
         {/* ── Content ──────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto px-4 py-4 pb-28 lg:px-8 lg:py-6 lg:pb-6">
-          {!activeBusiness || activeTab === "transactions" ? (
+          {activeTab === "analytics" ? (
+            activeBusiness ? (
+              <AnalyticsDashboard
+                projectId={analyticsProjectId}
+                onProjectChange={(id, name) => {
+                  setAnalyticsProjectId(id);
+                  setAnalyticsProjectName(name);
+                }}
+                onSettingsClick={() => setShowSettings(true)}
+              />
+            ) : (
+              <AnalyticsSummary transactions={transactions} />
+            )
+          ) : activeTab === "invoices" && activeBusiness ? (
+            <InvoiceList invoices={invoices} loading={loadingInv} onEdit={setEditingInv} onDelete={handleDeleteInv} />
+          ) : (
             <>
               {/* Search bar — only when data is loaded and there's something to search */}
               {!loadingTx && transactions.length > 0 && (
@@ -1166,17 +1197,6 @@ export default function DashboardPage() {
                 )}
               </div>
             </>
-          ) : activeTab === "invoices" ? (
-            <InvoiceList invoices={invoices} loading={loadingInv} onEdit={setEditingInv} onDelete={handleDeleteInv} />
-          ) : (
-            <AnalyticsDashboard
-              projectId={analyticsProjectId}
-              onProjectChange={(id, name) => {
-                setAnalyticsProjectId(id);
-                setAnalyticsProjectName(name);
-              }}
-              onSettingsClick={() => setShowSettings(true)}
-            />
           )}
         </div>
 
@@ -1216,8 +1236,7 @@ export default function DashboardPage() {
               icon={<IconAnalytics />}
               label="Analytics"
               active={activeTab === "analytics"}
-              onClick={() => { if (activeBusiness) setActiveTab("analytics"); }}
-              disabled={!activeBusiness}
+              onClick={() => setActiveTab(activeTab === "analytics" ? "transactions" : "analytics")}
             />
             <MobileNavTab
               icon={<IconMenu />}
