@@ -233,7 +233,7 @@ function TxMenu({
     <div ref={ref} className="relative">
       <button
         onClick={() => { setOpen((o) => !o); setConfirming(false); }}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 opacity-0 transition group-hover:opacity-100 hover:bg-zinc-700 hover:text-zinc-200"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200"
         aria-label="Transaction options"
       >
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
@@ -483,7 +483,7 @@ function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTablePro
                 {tx.transaction_type === "outflow" && <span className="font-sans">−</span>}
                 <Amt value={formatCurrency(tx.amount)} />
               </td>
-              <td className="px-3 py-4 text-right">
+              <td className="py-4 pl-3 pr-5 text-right">
                 <TxMenu tx={tx} onEdit={onEdit} onDelete={onDelete} tableRow />
               </td>
             </tr>
