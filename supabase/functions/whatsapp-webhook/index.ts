@@ -308,6 +308,363 @@ async function handleCancelCommand(
   ].join("\n");
 }
 
+// ── Phase 1: Interactive button routing ──────────────────────────────────────
+
+type ButtonAction =
+  | { kind: "cancel_last" }
+  | { kind: "confirm_personal"; amount: number; tag: FinancialTag; description: string }
+  | { kind: "confirm_business"; businessId: string; amount: number; tag: FinancialTag; description: string }
+  | { kind: "select_scope_personal" }                    // loads pending tx from session → Personal Ledger
+  | { kind: "select_scope_biz"; businessId: string };    // loads pending tx from session → named business
+
+function parseButtonPayload(payload: string): ButtonAction | null {
+  const p = payload.trim();
+
+  if (p === "CANCEL_LAST_TX") return { kind: "cancel_last" };
+
+  // Scope-selection buttons sent alongside the ambiguity clarification message.
+  if (p === "SELECT_PERSONAL") return { kind: "select_scope_personal" };
+  const scopeBizM = p.match(/^SELECT_BIZ\|([^|]+)$/);
+  if (scopeBizM) return { kind: "select_scope_biz", businessId: scopeBizM[1] };
+
+  // LOG_PERSONAL|amount|tag|description
+  const personalM = p.match(/^LOG_PERSONAL\|(\d+(?:\.\d+)?)\|([^|]+)\|(.+)$/);
+  if (personalM) {
+    return {
+      kind: "confirm_personal",
+      amount: parseFloat(personalM[1]),
+      tag: personalM[2] as FinancialTag,
+      description: personalM[3],
+    };
+  }
+
+  // LOG_BIZ|businessId|amount|tag|description
+  const bizM = p.match(/^LOG_BIZ\|([^|]+)\|(\d+(?:\.\d+)?)\|([^|]+)\|(.+)$/);
+  if (bizM) {
+    return {
+      kind: "confirm_business",
+      businessId: bizM[1],
+      amount: parseFloat(bizM[2]),
+      tag: bizM[3] as FinancialTag,
+      description: bizM[4],
+    };
+  }
+
+  return null;
+}
+
+// ── Phase 2: Regex shortcut matching ─────────────────────────────────────────
+// Handles concise messages like "15k fuel" or "15k fuel for parkview" without
+// an AI call. After keyword detection any remaining text is extracted as a
+// potential_scope_text and resolved against the DB at the call site — if no
+// match is found the message falls cleanly through to Phase 4 (Gemini).
+
+interface ShortcutMatch {
+  amount:             number;
+  transaction_type:   TransactionType;
+  financial_tag:      FinancialTag;
+  label:              string;
+  potentialScopeText: string | null; // cleaned remaining text after keyword + stopword removal
+}
+
+const SHORTCUT_KEYWORDS: {
+  pattern: RegExp;
+  type: TransactionType;
+  tag: FinancialTag;
+  label: string;
+}[] = [
+  { pattern: /\b(fuel|petrol|diesel|generator|gen)\b/i,                       type: "outflow", tag: "personal_essential", label: "Fuel"         },
+  { pattern: /\b(transport|uber|bolt|taxi|bus|okada|keke|ride|drop)\b/i,       type: "outflow", tag: "personal_essential", label: "Transport"    },
+  { pattern: /\b(lunch|dinner|breakfast|food|eat|snack|meal|supper)\b/i,       type: "outflow", tag: "personal_essential", label: "Food"         },
+  { pattern: /\b(data|airtime|recharge|mtn|glo|airtel|9mobile|sim)\b/i,        type: "outflow", tag: "personal_essential", label: "Airtime/Data" },
+  { pattern: /\b(salary|salaries|staff|wages|payroll)\b/i,                     type: "outflow", tag: "opex",               label: "Salary"       },
+  { pattern: /\b(rent|office\s*rent|shop\s*rent)\b/i,                          type: "outflow", tag: "opex",               label: "Rent"         },
+  { pattern: /\b(ads?|advert(?:isement)?|marketing|promotion|boost)\b/i,       type: "outflow", tag: "opex",               label: "Marketing"    },
+  { pattern: /\b(received|payment|paid\s*me|client\s*paid|invoice\s*paid)\b/i, type: "inflow",  tag: "revenue",            label: "Income"       },
+];
+
+// Matches: {digits}[,digits][k?] {rest}  — amount must come first.
+const SHORTCUT_RE = /^(\d+(?:[.,]\d+)?)(k)?\s+(.+)$/i;
+
+// Prepositions/articles stripped when extracting scope from the remainder.
+const SCOPE_STOPWORDS_RE = /\b(for|to|on|in|at|with|the|a|an|my|our|this|that|it|about|some|just|also|even|still)\b/gi;
+
+// Pure temporal and filler words that describe timing, not a workspace scope.
+// Presence of only these words → no scope hint, default to Personal Ledger.
+const SCOPE_TEMPORAL = new Set([
+  "today", "yesterday", "now", "again", "late", "early",
+  "morning", "evening", "night", "week", "month", "year",
+  "last", "next", "recent", "soon", "later", "ago",
+]);
+
+// Extracts a cleaned potential scope string from the full rest phrase.
+// Priority: explicit dash/em-dash separator > keyword-removal approach.
+//   "fuel - Parkview project"        → "Parkview project"
+//   "for fuel for parkview project"  → "parkview project"
+//   "fuel today"                     → null  (temporal word only)
+//   "fuel"                           → null  (nothing remaining)
+function extractPotentialScope(rest: string, kwPattern: RegExp): string | null {
+  // 1. Explicit separator is the strongest signal.
+  const dashM = rest.match(/[-—–]\s*(.+)$/);
+  if (dashM) return dashM[1].trim();
+
+  // 2. Remove the matched keyword tokens and then strip stopwords.
+  const stripped = rest
+    .replace(kwPattern, "")
+    .replace(SCOPE_STOPWORDS_RE, "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  if (stripped.length < 2) return null;
+
+  // 3. Discard result if every remaining word is a temporal/filler word.
+  const significant = stripped
+    .split(/\s+/)
+    .filter((w) => w.length >= 2 && !SCOPE_TEMPORAL.has(w.toLowerCase()));
+
+  return significant.length > 0 ? significant.join(" ") : null;
+}
+
+function matchShortcut(text: string): ShortcutMatch | null {
+  const t = text.trim();
+  const m = t.match(SHORTCUT_RE);
+  if (!m) return null;
+
+  const rawNum = parseFloat(m[1].replace(",", "."));
+  const amount = m[2] ? rawNum * 1000 : rawNum;
+  const rest   = m[3].trim();
+
+  for (const kw of SHORTCUT_KEYWORDS) {
+    if (kw.pattern.test(rest)) {
+      return {
+        amount,
+        transaction_type:   kw.type,
+        financial_tag:      kw.tag,
+        label:              kw.label,
+        potentialScopeText: extractPotentialScope(rest, kw.pattern),
+      };
+    }
+  }
+
+  return null;
+}
+
+// ── Phase 3: Session state ────────────────────────────────────────────────────
+
+type SessionState = "AWAITING_SCOPE_SELECTION" | "AWAITING_CANCEL_CONFIRMATION";
+
+// Serialised inside user_sessions.context_json for AWAITING_SCOPE_SELECTION.
+interface PendingTransactionContext {
+  amount:           number;
+  transaction_type: TransactionType;
+  financial_tag:    FinancialTag;
+  description:      string;
+  raw_text:         string;
+}
+
+interface UserSession {
+  current_state: SessionState;
+  context_json:  string | null;
+}
+
+// Typed result returned by handleSessionState.
+// "reply"  → return this message to the user immediately, pipeline stops.
+// "route"  → resume the pipeline with these pre-filled values, skip the AI call.
+// "defer"  → session cleared; fall through to AI as normal.
+type SessionRouteResult =
+  | { kind: "reply";  message: string }
+  | { kind: "route";  parsed: ParsedTransaction; businessId: string | null }
+  | { kind: "defer" };
+
+async function getSession(
+  supabase: ReturnType<typeof createClient>,
+  phoneNumber: string,
+): Promise<UserSession | null> {
+  try {
+    const { data } = await supabase
+      .from("user_sessions")
+      .select("current_state, context_json")
+      .eq("phone_number", phoneNumber)
+      .not("current_state", "is", null)
+      .maybeSingle() as { data: UserSession | null };
+    return data ?? null;
+  } catch {
+    return null; // table may not exist yet
+  }
+}
+
+async function saveSession(
+  supabase: ReturnType<typeof createClient>,
+  phoneNumber: string,
+  state: SessionState,
+  context: PendingTransactionContext,
+): Promise<void> {
+  try {
+    await supabase.from("user_sessions").upsert(
+      {
+        phone_number:  phoneNumber,
+        current_state: state,
+        context_json:  JSON.stringify(context),
+        updated_at:    new Date().toISOString(),
+      },
+      { onConflict: "phone_number" },
+    );
+  } catch (e) {
+    console.error("[session] saveSession failed:", e);
+  }
+}
+
+async function clearSession(
+  supabase: ReturnType<typeof createClient>,
+  phoneNumber: string,
+): Promise<void> {
+  try {
+    await supabase
+      .from("user_sessions")
+      .update({ current_state: null, context_json: null, updated_at: new Date().toISOString() })
+      .eq("phone_number", phoneNumber);
+  } catch { /* non-fatal */ }
+}
+
+async function handleSessionState(
+  supabase: ReturnType<typeof createClient>,
+  from: string,
+  rawText: string,
+  session: UserSession,
+  businesses: BusinessRow[],
+): Promise<SessionRouteResult> {
+  // ── AWAITING_SCOPE_SELECTION ─────────────────────────────────────────────
+  // User was shown an ambiguity prompt. Their reply should be "personal",
+  // "1", or an exact/partial business name. Button clicks arrive via Phase 1
+  // and call resolveSessionWithBusiness() directly — this branch handles
+  // plain-text replies.
+  if (session.current_state === "AWAITING_SCOPE_SELECTION") {
+    const ctx = (() => {
+      try {
+        return session.context_json
+          ? JSON.parse(session.context_json) as PendingTransactionContext
+          : null;
+      } catch { return null; }
+    })();
+
+    if (!ctx) {
+      console.log("[session] AWAITING_SCOPE_SELECTION — no context stored, deferring to AI");
+      await clearSession(supabase, from);
+      return { kind: "defer" };
+    }
+
+    const t = rawText.trim().toLowerCase();
+    let resolvedBusinessId: string | null = null;
+    let matched = false;
+
+    // "personal", "👤", or "1" → Personal Ledger
+    if (/^(personal|1|👤|personal ledger)$/i.test(t)) {
+      resolvedBusinessId = null;
+      matched = true;
+      console.log("[session] AWAITING_SCOPE_SELECTION → Personal Ledger");
+    } else {
+      // Try to match against a known business name (partial or exact).
+      const bizMatch = businesses.find(
+        (b) =>
+          b.name.toLowerCase().includes(t) ||
+          t.includes(b.name.toLowerCase()),
+      );
+      if (bizMatch) {
+        resolvedBusinessId = bizMatch.id;
+        matched = true;
+        console.log(`[session] AWAITING_SCOPE_SELECTION → business "${bizMatch.name}"`);
+      }
+    }
+
+    if (!matched) {
+      // Unrecognised reply — keep the session alive and re-prompt once.
+      console.log("[session] AWAITING_SCOPE_SELECTION — unrecognised reply, re-prompting");
+      const bizLines = businesses.map((b) => `• ${b.name}`).join("\n");
+      return {
+        kind: "reply",
+        message: [
+          "❓ I didn't recognise that workspace. Please reply with:",
+          "",
+          '• "personal" — Personal Ledger',
+          bizLines,
+          "",
+          "Or just type the business name exactly as listed above.",
+        ].join("\n"),
+      };
+    }
+
+    await clearSession(supabase, from);
+
+    const syntheticParsed: ParsedTransaction = {
+      amount:                ctx.amount,
+      transaction_type:      ctx.transaction_type,
+      financial_tag:         ctx.financial_tag,
+      description:           ctx.description,
+      entity_prefix_guess:   null,
+      project_name:          null,
+      is_corporate_ambiguous: false,
+      is_valid_transaction:  true,
+    };
+
+    return { kind: "route", parsed: syntheticParsed, businessId: resolvedBusinessId };
+  }
+
+  // ── AWAITING_CANCEL_CONFIRMATION ─────────────────────────────────────────
+  if (session.current_state === "AWAITING_CANCEL_CONFIRMATION") {
+    await clearSession(supabase, from);
+    return { kind: "defer" };
+  }
+
+  await clearSession(supabase, from);
+  return { kind: "defer" };
+}
+
+// Resolves a pending scope-selection session triggered by a button click.
+// Returns the same SessionRouteResult shape so the call site is uniform.
+async function resolveSessionWithBusiness(
+  supabase: ReturnType<typeof createClient>,
+  from: string,
+  businessId: string | null,
+): Promise<SessionRouteResult> {
+  const session = await getSession(supabase, from);
+
+  if (!session || session.current_state !== "AWAITING_SCOPE_SELECTION") {
+    console.log("[session/button] No active AWAITING_SCOPE_SELECTION session for", from);
+    return { kind: "reply", message: "⚠️ No pending transaction found. Please resend your original message." };
+  }
+
+  const ctx = (() => {
+    try {
+      return session.context_json
+        ? JSON.parse(session.context_json) as PendingTransactionContext
+        : null;
+    } catch { return null; }
+  })();
+
+  if (!ctx) {
+    await clearSession(supabase, from);
+    return { kind: "reply", message: "⚠️ Session context lost. Please resend your original message." };
+  }
+
+  await clearSession(supabase, from);
+  console.log(`[session/button] Resolved scope: businessId=${businessId ?? "Personal Ledger"}`);
+
+  return {
+    kind: "route",
+    parsed: {
+      amount:                ctx.amount,
+      transaction_type:      ctx.transaction_type,
+      financial_tag:         ctx.financial_tag,
+      description:           ctx.description,
+      entity_prefix_guess:   null,
+      project_name:          null,
+      is_corporate_ambiguous: false,
+      is_valid_transaction:  true,
+    },
+    businessId,
+  };
+}
+
 // ── System instructions ───────────────────────────────────────────────────────
 
 const SYSTEM_INSTRUCTION_TEXT = `
@@ -451,14 +808,15 @@ function toBase64(buffer: Uint8Array): string {
 
 // ── Gemini calls ──────────────────────────────────────────────────────────────
 
-// Retries on transient Gemini overload (503) and rate-limit (429) errors.
-// Delays: 1 s → 2 s → 4 s before giving up after 3 retries.
+// Retries once on transient Gemini overload (503) or rate-limit (429).
+// Delay is capped at 400 ms to stay well inside Twilio's 15-second limit.
 async function geminiPost(
   label: string,
   body: unknown,
-  maxRetries = 3,
+  maxRetries = 1,
 ): Promise<Response> {
   const RETRYABLE = new Set([429, 503]);
+  const MAX_DELAY_MS = 400;
   let attempt = 0;
 
   while (true) {
@@ -472,7 +830,7 @@ async function geminiPost(
       return res;
     }
 
-    const delay = 1000 * Math.pow(2, attempt);
+    const delay = Math.min(200 * Math.pow(2, attempt), MAX_DELAY_MS);
     console.warn(`[${label}] Gemini ${res.status} — retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
     await new Promise((r) => setTimeout(r, delay));
     attempt++;
@@ -536,8 +894,13 @@ async function runPipeline(
   rawText: string,
   from: string,
   mediaUrl: string | null,
+  buttonPayload: string | null,
 ): Promise<string | null> {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  // Populated by Phase 1 or Phase 2 to skip the AI call entirely.
+  let shortcutParsed: ParsedTransaction | null = null;
+  let overrideBusinessId: string | null | undefined = undefined; // undefined = "not set by router"
 
   // ── Step B: Identify user ─────────────────────────────────────────────────
   // Primary: first row in businesses. Fallback: first user_id in transactions.
@@ -565,6 +928,145 @@ async function runPipeline(
   if (!userId) {
     console.error("[pipeline] Cannot resolve user_id — sending setup prompt");
     return "Setup incomplete. Please create your first workspace on the web dashboard before texting Cash Bot.";
+  }
+
+  // ── Phase 1: Interactive button dispatch ─────────────────────────────────
+  if (buttonPayload) {
+    console.log(`[router/P1] button payload: "${buttonPayload}"`);
+    const action = parseButtonPayload(buttonPayload);
+    if (action) {
+      if (action.kind === "cancel_last") {
+        console.log("[router/P1] → cancel_last");
+        return await handleCancelCommand(supabase, from);
+      }
+      // Scope-selection buttons: load pending tx from session + commit.
+      if (action.kind === "select_scope_personal" || action.kind === "select_scope_biz") {
+        const targetBizId = action.kind === "select_scope_biz" ? action.businessId : null;
+        console.log(`[router/P1] → ${action.kind}, businessId=${targetBizId ?? "Personal Ledger"}`);
+        const result = await resolveSessionWithBusiness(supabase, from, targetBizId);
+        if (result.kind === "reply") return result.message;
+        if (result.kind === "route") {
+          shortcutParsed    = result.parsed;
+          overrideBusinessId = result.businessId;
+        }
+        // "defer" falls through to AI
+      } else if (action.kind === "confirm_personal") {
+        console.log("[router/P1] → confirm_personal");
+        shortcutParsed = {
+          amount: action.amount,
+          transaction_type: "outflow",
+          financial_tag: action.tag,
+          description: action.description,
+          entity_prefix_guess: null,
+          project_name: null,
+          is_corporate_ambiguous: false,
+          is_valid_transaction: true,
+        };
+        overrideBusinessId = null;
+      } else if (action.kind === "confirm_business") {
+        console.log("[router/P1] → confirm_business:", action.businessId);
+        shortcutParsed = {
+          amount: action.amount,
+          transaction_type: "outflow",
+          financial_tag: action.tag,
+          description: action.description,
+          entity_prefix_guess: null,
+          project_name: null,
+          is_corporate_ambiguous: false,
+          is_valid_transaction: true,
+        };
+        overrideBusinessId = action.businessId;
+      }
+    } else {
+      console.log("[router/P1] unrecognised payload — falling through");
+    }
+  }
+
+  // ── Phase 2: Regex shortcut ───────────────────────────────────────────────
+  if (!shortcutParsed && !mediaUrl) {
+    const sc = matchShortcut(rawText);
+    if (sc) {
+      console.log("[router/P2] shortcut match:", { amount: sc.amount, label: sc.label, scopeText: sc.potentialScopeText });
+
+      let p2BusinessId: string | null | undefined = undefined; // undefined = Personal Ledger
+      let p2ProjectName: string | null = null;
+      let p2Description = sc.label;
+      let p2Resolved = true; // set false to drop through to Gemini
+
+      if (sc.potentialScopeText) {
+        const scopeTerm = sc.potentialScopeText.toLowerCase();
+
+        // Parallel lookup: businesses + projects in one round-trip.
+        const [bizResult, projResult] = await Promise.all([
+          supabase
+            .from("businesses")
+            .select("id, name")
+            .ilike("name", `%${scopeTerm}%`)
+            .limit(3) as Promise<{ data: { id: string; name: string }[] | null; error: unknown }>,
+          supabase
+            .from("projects")
+            .select("id, name, business_id")
+            .ilike("name", `%${scopeTerm}%`)
+            .limit(3) as Promise<{ data: { id: string; name: string; business_id: string }[] | null; error: unknown }>,
+        ]);
+
+        if (bizResult.error)  console.error("[router/P2] business lookup error:", bizResult.error);
+        if (projResult.error) console.error("[router/P2] project lookup error:", projResult.error);
+
+        const bizMatch  = bizResult.data?.[0]  ?? null;
+        const projMatch = projResult.data?.[0] ?? null;
+
+        if (bizMatch) {
+          p2BusinessId  = bizMatch.id;
+          p2Description = `${sc.label} — ${bizMatch.name}`;
+          console.log(`[router/P2] business match → "${bizMatch.name}" (${bizMatch.id})`);
+        } else if (projMatch) {
+          p2BusinessId  = projMatch.business_id;
+          p2ProjectName = projMatch.name;
+          p2Description = `${sc.label} — ${projMatch.name}`;
+          console.log(`[router/P2] project match → "${projMatch.name}" (biz ${projMatch.business_id})`);
+        } else {
+          // Scope text found but no DB match — let Gemini resolve contextually.
+          console.log(`[router/P2] no DB match for "${sc.potentialScopeText}" — deferring to AI`);
+          p2Resolved = false;
+        }
+      }
+      // potentialScopeText === null → plain shortcut, no scope → Personal Ledger fast path.
+
+      if (p2Resolved) {
+        shortcutParsed = {
+          amount:                sc.amount,
+          transaction_type:      sc.transaction_type,
+          financial_tag:         sc.financial_tag,
+          description:           p2Description,
+          entity_prefix_guess:   null,
+          project_name:          p2ProjectName,
+          is_corporate_ambiguous: false,
+          is_valid_transaction:  true,
+        };
+
+        if (p2BusinessId !== undefined) {
+          overrideBusinessId = p2BusinessId;
+        }
+      }
+    }
+  }
+
+  // ── Phase 3: Session state ────────────────────────────────────────────────
+  if (!shortcutParsed) {
+    const session = await getSession(supabase, from);
+    if (session) {
+      console.log(`[router/P3] session state: ${session.current_state}`);
+      const result = await handleSessionState(supabase, from, rawText, session, businesses ?? []);
+      if (result.kind === "reply")  return result.message;
+      if (result.kind === "route") {
+        shortcutParsed    = result.parsed;
+        overrideBusinessId = result.businessId;
+        console.log("[router/P3] session resolved — resuming pipeline with pre-filled route");
+      } else {
+        console.log("[router/P3] session deferred — proceeding to AI");
+      }
+    }
   }
 
   // ── Step B2: Reminder command intercept ──────────────────────────────────
@@ -596,19 +1098,27 @@ async function runPipeline(
     }
   }
 
-  // ── Step D: AI semantic extraction ───────────────────────────────────────
+  // ── Step D: AI semantic extraction (Phase 4 fallback) ────────────────────
   let parsed: ParsedTransaction;
-  try {
-    if (imageBuffer) {
-      parsed = await extractFromImage(rawText, imageBuffer, imageMimeType);
-      console.log("[pipeline] Gemini vision parsed:", parsed);
-    } else {
-      parsed = await extractFromText(rawText);
-      console.log("[pipeline] Gemini text parsed:", parsed);
+
+  if (shortcutParsed) {
+    // Phase 1 or 2 already extracted — skip Gemini entirely.
+    parsed = shortcutParsed;
+    console.log("[router/P4] AI bypassed — using pre-parsed result");
+  } else {
+    try {
+      if (imageBuffer) {
+        parsed = await extractFromImage(rawText, imageBuffer, imageMimeType);
+        console.log("[router/P4] Gemini vision parsed:", parsed);
+      } else {
+        parsed = await extractFromText(rawText);
+        console.log("[router/P4] Gemini text parsed:", parsed);
+      }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error("[router/P4] Gemini call failed:", detail);
+      return "⚠️ CashBot is experiencing high traffic right now. Please try logging that transaction again in a moment!";
     }
-  } catch (err) {
-    // Re-throw so the HTTP handler surfaces it on the phone via twimlMessage
-    throw err;
   }
 
   // ── Step D2: Invalid transaction intercept ────────────────────────────────
@@ -631,30 +1141,42 @@ async function runPipeline(
   // ambiguous outflow gets an explicit workspace before it enters the ledger.
   // Skip when a project name was stated — Step F2 will resolve the business.
   if (parsed.is_corporate_ambiguous && !parsed.entity_prefix_guess && !parsed.project_name) {
-    console.log("[pipeline] Dual-use / corporate ambiguity — requesting clarification");
+    console.log("[pipeline] Dual-use / corporate ambiguity — saving session + requesting scope");
 
-    const businessLines = businesses?.map((b) => `• ${b.name}`).join("\n") ?? "";
-    const exampleBiz = businesses?.[0]?.name ?? "My Business";
+    // Persist the parsed context so Phase 3 or a button reply can resume later.
+    await saveSession(supabase, from, "AWAITING_SCOPE_SELECTION", {
+      amount:           parsed.amount,
+      transaction_type: parsed.transaction_type,
+      financial_tag:    parsed.financial_tag,
+      description:      parsed.description,
+      raw_text:         rawText,
+    });
+
+    const bizLines = businesses?.map((b, i) => `${i + 2}. 💼 ${b.name}`).join("\n") ?? "";
 
     return [
-      "🤔 That could be a business expense or a personal one — I'm not sure which workspace to log it under!",
+      `🤔 *Which workspace should I log this under?*`,
       "",
-      "Please resend your message and specify a workspace:",
+      `💰 ${fmtNGN(parsed.amount)} — ${parsed.description}`,
       "",
-      "🏢 Corporate workspaces:",
-      businessLines,
-      "👤 • Personal Ledger",
+      "Reply with a number or name:",
+      "1. 👤 Personal Ledger",
+      bizLines,
       "",
-      "Examples:",
-      `"Paid 15,000 NGN for fuel for ${exampleBiz}"`,
-      `"Spent 8,500 NGN on lunch — personal"`,
+      "Or just type the business name.",
+      "",
+      "_(Your transaction is saved — reply any time today to confirm.)_",
     ].join("\n");
   }
 
   // ── Step F: Context routing ───────────────────────────────────────────────
-  let businessId: string | null = null;
+  // overrideBusinessId set by Phase 1 (button confirm): null = Personal Ledger,
+  // a UUID = that business, undefined = "not specified, use entity_prefix_guess".
+  let businessId: string | null = overrideBusinessId !== undefined ? overrideBusinessId : null;
 
-  if (parsed.entity_prefix_guess && businesses?.length) {
+  if (overrideBusinessId !== undefined) {
+    console.log(`[router/P1] business override: ${overrideBusinessId ?? "Personal Ledger"}`);
+  } else if (parsed.entity_prefix_guess && businesses?.length) {
     const guess = parsed.entity_prefix_guess.trim().toLowerCase();
     const match = businesses.find(
       (b) =>
@@ -669,7 +1191,7 @@ async function runPipeline(
         `[pipeline] No business matched "${parsed.entity_prefix_guess}" — routing to Personal Ledger`,
       );
     }
-  } else {
+  } else if (overrideBusinessId === undefined) {
     console.log("[pipeline] No entity hint — routing to Personal Ledger");
   }
 
@@ -972,18 +1494,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   // Step A: Parse Twilio urlencoded payload
   const form = await req.formData();
-  const rawText: string = (form.get("Body") as string | null) ?? "";
-  const from: string = (form.get("From") as string | null) ?? "";
-  const mediaUrl: string | null = form.get("MediaUrl0") as string | null;
+  const rawText: string      = (form.get("Body") as string | null) ?? "";
+  const from: string         = (form.get("From") as string | null) ?? "";
+  const mediaUrl: string | null    = form.get("MediaUrl0") as string | null;
+  const buttonPayload: string | null = form.get("ButtonPayload") as string | null;
+  const messageType: string  = (form.get("MessageType") as string | null) ?? "text";
 
   console.log("[whatsapp-webhook] incoming", {
     from,
     bodyPreview: rawText.slice(0, 80),
-    hasMedia: mediaUrl !== null,
+    hasMedia:    mediaUrl !== null,
+    messageType,
+    buttonPayload: buttonPayload ?? "(none)",
   });
 
   try {
-    const reply = await runPipeline(rawText, from, mediaUrl);
+    const reply = await runPipeline(rawText, from, mediaUrl, buttonPayload);
     return twimlMessage(reply ?? "✅ Done.");
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
