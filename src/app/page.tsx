@@ -244,7 +244,7 @@ function TxMenu({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-40 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+        <div className="absolute right-0 bottom-full z-50 mb-1 w-40 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
           {confirming ? (
             <div className="px-3 py-3">
               <p className="mb-2.5 text-xs font-medium text-zinc-300">Delete this transaction?</p>
