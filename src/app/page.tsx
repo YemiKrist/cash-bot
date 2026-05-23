@@ -786,11 +786,26 @@ export default function DashboardPage() {
   const [projectsRefreshKey, setProjectsRefreshKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
 
+  type DatePreset = "day" | "week" | "month" | "year" | "custom";
+  const [activePreset, setActivePreset] = useState<DatePreset>("month");
+  const [startDate,    setStartDate]    = useState<Date>(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1, 0, 0, 0, 0); });
+  const [endDate,      setEndDate]      = useState<Date>(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth() + 1, 0, 23, 59, 59, 999); });
+  const [customStart,  setCustomStart]  = useState("");
+  const [customEnd,    setCustomEnd]    = useState("");
+
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [authLoading, user, router]);
 
-  useEffect(() => { setSearchQuery(""); }, [activeBusiness, activeTab]);
+  useEffect(() => {
+    setSearchQuery("");
+    setActivePreset("month");
+    setCustomStart("");
+    setCustomEnd("");
+    const n = new Date();
+    setStartDate(new Date(n.getFullYear(), n.getMonth(), 1, 0, 0, 0, 0));
+    setEndDate(new Date(n.getFullYear(), n.getMonth() + 1, 0, 23, 59, 59, 999));
+  }, [activeBusiness, activeTab]);
 
   useEffect(() => {
     setActiveTab("transactions");
@@ -852,17 +867,41 @@ export default function DashboardPage() {
     );
   }
 
-  const filteredTransactions = searchQuery.trim()
-    ? transactions.filter((tx) => {
-        const q = searchQuery.toLowerCase();
-        return (
-          tx.description?.toLowerCase().includes(q) ||
-          tx.financial_tag?.toLowerCase().includes(q) ||
-          tx.transaction_type?.toLowerCase().includes(q) ||
-          tx.amount?.toString().includes(q)
-        );
-      })
-    : transactions;
+  function applyPreset(preset: Exclude<DatePreset, "custom">) {
+    const n = new Date();
+    const [y, m, d] = [n.getFullYear(), n.getMonth(), n.getDate()];
+    let s: Date, e: Date;
+    if (preset === "day") {
+      s = new Date(y, m, d, 0, 0, 0, 0);
+      e = new Date(y, m, d, 23, 59, 59, 999);
+    } else if (preset === "week") {
+      const dow = n.getDay();
+      s = new Date(y, m, d - dow, 0, 0, 0, 0);
+      e = new Date(y, m, d + (6 - dow), 23, 59, 59, 999);
+    } else if (preset === "month") {
+      s = new Date(y, m, 1, 0, 0, 0, 0);
+      e = new Date(y, m + 1, 0, 23, 59, 59, 999);
+    } else {
+      s = new Date(y, 0, 1, 0, 0, 0, 0);
+      e = new Date(y, 11, 31, 23, 59, 59, 999);
+    }
+    setStartDate(s);
+    setEndDate(e);
+    setActivePreset(preset);
+  }
+
+  const filteredTransactions = transactions.filter((tx) => {
+    const q = searchQuery.toLowerCase();
+    const matchesSearch =
+      !q ||
+      tx.description?.toLowerCase().includes(q) ||
+      tx.financial_tag?.toLowerCase().includes(q) ||
+      tx.transaction_type?.toLowerCase().includes(q) ||
+      tx.amount?.toString().includes(q);
+    const txDate = new Date(tx.created_at);
+    const matchesDate = txDate >= startDate && txDate <= endDate;
+    return matchesSearch && matchesDate;
+  });
 
   async function handleDeleteTx(tx: Transaction) {
     await supabase.from("transactions").delete().eq("id", tx.id);
@@ -1151,37 +1190,94 @@ export default function DashboardPage() {
             <InvoiceList invoices={invoices} loading={loadingInv} onEdit={setEditingInv} onDelete={handleDeleteInv} />
           ) : (
             <>
-              {/* Search bar — only when data is loaded and there's something to search */}
-              {!loadingTx && transactions.length > 0 && (
-                <div className="relative mb-4">
-                  <svg
-                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
-                    viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
-                    strokeLinecap="round" strokeLinejoin="round"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  </svg>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search transactions by description, tag, or keyword..."
-                    className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 pl-10 pr-10 text-sm text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                  />
-                  {searchQuery && (
+              {/* Search + date filter toolbar */}
+              {!loadingTx && (
+                <div className="mb-4 space-y-2">
+                  {/* Search input */}
+                  <div className="relative">
+                    <svg
+                      className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"
+                      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+                      strokeLinecap="round" strokeLinejoin="round"
+                    >
+                      <circle cx="11" cy="11" r="8" />
+                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search transactions by description, tag, or keyword..."
+                      className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 pl-10 pr-10 text-sm text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-zinc-500 transition hover:text-zinc-200"
+                        aria-label="Clear search"
+                      >
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Date filter row */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(["day", "week", "month", "year"] as const).map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => applyPreset(preset)}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                          activePreset === preset
+                            ? "bg-emerald-500 text-zinc-950"
+                            : "border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+                        }`}
+                      >
+                        {preset === "day" ? "Today" : preset === "week" ? "This Week" : preset === "month" ? "This Month" : "This Year"}
+                      </button>
+                    ))}
+
                     <button
                       type="button"
-                      onClick={() => setSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-zinc-500 transition hover:text-zinc-200"
-                      aria-label="Clear search"
+                      onClick={() => setActivePreset("custom")}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                        activePreset === "custom"
+                          ? "bg-emerald-500 text-zinc-950"
+                          : "border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+                      }`}
                     >
-                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
+                      Custom
                     </button>
-                  )}
+
+                    {activePreset === "custom" && (
+                      <>
+                        <input
+                          type="date"
+                          value={customStart}
+                          onChange={(e) => {
+                            setCustomStart(e.target.value);
+                            if (e.target.value) setStartDate(new Date(e.target.value + "T00:00:00"));
+                          }}
+                          className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 outline-none transition focus:border-emerald-500 [color-scheme:dark]"
+                        />
+                        <span className="text-xs text-zinc-600">→</span>
+                        <input
+                          type="date"
+                          value={customEnd}
+                          onChange={(e) => {
+                            setCustomEnd(e.target.value);
+                            if (e.target.value) setEndDate(new Date(e.target.value + "T23:59:59"));
+                          }}
+                          className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 outline-none transition focus:border-emerald-500 [color-scheme:dark]"
+                        />
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1206,8 +1302,9 @@ export default function DashboardPage() {
                 ) : filteredTransactions.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
                     <p className="text-sm text-zinc-500">
-                      🔍 No matching transactions discovered for{" "}
-                      <span className="font-medium text-zinc-300">"{searchQuery}"</span>.
+                      {searchQuery
+                        ? <>🔍 No transactions matching <span className="font-medium text-zinc-300">"{searchQuery}"</span> in this period.</>
+                        : "No transactions in this date range."}
                     </p>
                   </div>
                 ) : (
@@ -1217,11 +1314,12 @@ export default function DashboardPage() {
 
               {/* Desktop table */}
               <div className="hidden lg:block">
-                {!loadingTx && searchQuery.trim() && filteredTransactions.length === 0 ? (
+                {!loadingTx && filteredTransactions.length === 0 ? (
                   <div className="flex items-center justify-center rounded-2xl border border-dashed border-zinc-800 py-20">
                     <p className="text-sm text-zinc-500">
-                      🔍 No matching transactions discovered for{" "}
-                      <span className="font-medium text-zinc-300">"{searchQuery}"</span>.
+                      {searchQuery
+                        ? <>🔍 No transactions matching <span className="font-medium text-zinc-300">"{searchQuery}"</span> in this period.</>
+                        : "No transactions in this date range."}
                     </p>
                   </div>
                 ) : (
