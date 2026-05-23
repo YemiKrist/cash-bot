@@ -16,21 +16,37 @@ type FinancialTag =
   | "revenue"
   | "cogs"
   | "opex"
-  | "personal_essential"
-  | "personal_luxury";
+  | "fixed_cost"
+  | "capex"
+  | "food_groceries"
+  | "transport"
+  | "bills_utilities"
+  | "personal_luxury"
+  | "clothing"
+  | "investment"
+  | "family_gifting";
 
 function tagsFor(type: TransactionType, hasBusiness: boolean): FinancialTag[] {
   if (type === "inflow") return ["revenue"];
-  return hasBusiness ? ["cogs", "opex"] : ["personal_essential", "personal_luxury"];
+  return hasBusiness
+    ? ["cogs", "opex", "fixed_cost", "capex"]
+    : ["food_groceries", "transport", "bills_utilities", "personal_luxury", "clothing", "investment", "family_gifting"];
 }
 
 function tagLabel(tag: FinancialTag): string {
   const map: Record<FinancialTag, string> = {
-    revenue: "Revenue",
-    cogs: "Cost of Goods Sold (COGS)",
-    opex: "Operating Expense (OPEX)",
-    personal_essential: "Personal Essential",
-    personal_luxury: "Personal Luxury",
+    revenue:         "Revenue",
+    cogs:            "Cost of Goods Sold (COGS)",
+    opex:            "Operating Expense (OPEX)",
+    fixed_cost:      "Monthly Fixed Cost",
+    capex:           "Capital Expenditure (CapEx)",
+    food_groceries:  "Food & Groceries",
+    transport:       "Transport & Logistics",
+    bills_utilities: "Bills & Utilities",
+    personal_luxury: "Personal Luxury / Lifestyle",
+    clothing:        "Clothing & Apparel",
+    investment:      "Savings & Investments",
+    family_gifting:  "Family & Gifting",
   };
   return map[tag];
 }
