@@ -48,11 +48,18 @@ function formatDate(iso: string): string {
 
 function tagLabel(tag: string): string {
   const map: Record<string, string> = {
-    revenue: "Revenue",
-    cogs: "COGS",
-    opex: "OPEX",
-    personal_essential: "Essential",
+    revenue:         "Revenue",
+    cogs:            "COGS",
+    opex:            "OPEX",
+    fixed_cost:      "Fixed Cost",
+    capex:           "CapEx",
+    food_groceries:  "Food",
+    transport:       "Transport",
+    bills_utilities: "Bills",
     personal_luxury: "Luxury",
+    clothing:        "Clothing",
+    investment:      "Savings",
+    family_gifting:  "Family",
   };
   return map[tag] ?? tag;
 }
@@ -77,11 +84,20 @@ function bizColor(name: string): string {
 }
 
 const TAG_COLORS: Record<string, string> = {
-  revenue: "bg-emerald-900/50 text-emerald-400",
-  cogs: "bg-amber-900/50 text-amber-400",
-  opex: "bg-blue-900/50 text-blue-400",
-  personal_essential: "bg-violet-900/50 text-violet-400",
+  // Business tags
+  revenue:         "bg-emerald-900/50 text-emerald-400",
+  cogs:            "bg-amber-900/50 text-amber-400",
+  opex:            "bg-blue-900/50 text-blue-400",
+  fixed_cost:      "bg-sky-900/50 text-sky-400",
+  capex:           "bg-indigo-900/50 text-indigo-400",
+  // Personal tags
+  food_groceries:  "bg-orange-900/50 text-orange-400",
+  transport:       "bg-cyan-900/50 text-cyan-400",
+  bills_utilities: "bg-violet-900/50 text-violet-400",
   personal_luxury: "bg-pink-900/50 text-pink-400",
+  clothing:        "bg-rose-900/50 text-rose-400",
+  investment:      "bg-teal-900/50 text-teal-400",
+  family_gifting:  "bg-purple-900/50 text-purple-400",
 };
 
 // ── Bottom nav icons ──────────────────────────────────────────────────────────

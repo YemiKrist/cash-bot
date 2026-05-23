@@ -115,10 +115,13 @@ type FinancialTag =
   | "opex"
   | "fixed_cost"
   | "capex"
-  | "personal_essential"
-  | "personal_luxury"
+  | "food_groceries"
+  | "transport"
   | "bills_utilities"
-  | "savings_investment";
+  | "personal_luxury"
+  | "clothing"
+  | "investment"
+  | "family_gifting";
 
 interface ParsedTransaction {
   amount: number;
@@ -460,10 +463,10 @@ const SHORTCUT_KEYWORDS: {
   tag: FinancialTag;
   label: string;
 }[] = [
-  { pattern: /\b(fuel|petrol|diesel|generator|gen)\b/i,                       type: "outflow", tag: "personal_essential", label: "Fuel"         },
-  { pattern: /\b(transport|uber|bolt|taxi|bus|okada|keke|ride|drop)\b/i,       type: "outflow", tag: "personal_essential", label: "Transport"    },
-  { pattern: /\b(lunch|dinner|breakfast|food|eat|snack|meal|supper)\b/i,       type: "outflow", tag: "personal_essential", label: "Food"         },
-  { pattern: /\b(data|airtime|recharge|mtn|glo|airtel|9mobile|sim)\b/i,        type: "outflow", tag: "personal_essential", label: "Airtime/Data" },
+  { pattern: /\b(fuel|petrol|diesel|generator|gen)\b/i,                       type: "outflow", tag: "transport",       label: "Fuel"         },
+  { pattern: /\b(transport|uber|bolt|taxi|bus|okada|keke|ride|drop)\b/i,       type: "outflow", tag: "transport",       label: "Transport"    },
+  { pattern: /\b(lunch|dinner|breakfast|food|eat|snack|meal|supper)\b/i,       type: "outflow", tag: "food_groceries",  label: "Food"         },
+  { pattern: /\b(data|airtime|recharge|mtn|glo|airtel|9mobile|sim)\b/i,        type: "outflow", tag: "bills_utilities", label: "Airtime/Data" },
   { pattern: /\b(salary|salaries|staff|wages|payroll)\b/i,                     type: "outflow", tag: "opex",               label: "Salary"       },
   { pattern: /\b(rent|office\s*rent|shop\s*rent)\b/i,                          type: "outflow", tag: "opex",               label: "Rent"         },
   { pattern: /\b(ads?|advert(?:isement)?|marketing|promotion|boost)\b/i,       type: "outflow", tag: "opex",               label: "Marketing"    },
@@ -858,7 +861,7 @@ exactly these fields:
 
   amount                 number         Monetary value in NGN (strip ₦ symbols and commas)
   transaction_type       string         "inflow" or "outflow"
-  financial_tag          string         One of: "revenue" | "cogs" | "opex" | "fixed_cost" | "capex" | "personal_essential" | "personal_luxury"
+  financial_tag          string         One of: "revenue" | "cogs" | "opex" | "fixed_cost" | "capex" | "food_groceries" | "transport" | "bills_utilities" | "personal_luxury" | "clothing" | "investment" | "family_gifting"
   description            string         One clean sentence summarising the transaction
   entity_prefix_guess    string|null    The exact business name mentioned, or null if none stated
   project_name           string|null    The exact project, client engagement, or deliverable name
@@ -911,10 +914,13 @@ Tag selection rules (Nigerian SME context):
   fixed_cost    → recurring monthly overheads that are predictable: shop or office rent,
                   permanent staff salaries, monthly utility bills, recurring retainer fees,
                   subscription services. Always outflow.
-  personal_essential → personal necessities — food, personal transport, healthcare,
-                  household utilities, school fees, personal airtime. Always outflow.
-  personal_luxury    → personal discretionary spending — dining out, entertainment,
-                  fashion, holidays, gifts. Always outflow.
+  food_groceries  → food, groceries, market runs, meals at home, restaurant dining. Always outflow.
+  transport       → personal transport — fuel, ride-hailing (Uber/Bolt), bus fares, okada, logistics. Always outflow.
+  bills_utilities → recurring bills — electricity (NEPA/PHCN), water, internet/broadband, data, airtime, school fees. Always outflow.
+  personal_luxury → lifestyle spending — fashion events, nightlife, holidays, subscriptions (Netflix/Spotify), hotels for leisure. Always outflow.
+  clothing        → clothes, shoes, accessories, fashion purchases. Always outflow.
+  investment      → savings transfers, investment deposits, pension contributions, money market, mutual funds. Always outflow.
+  family_gifting  → gifts, family support, remittances, celebrations (weddings, birthdays), charity, church offerings. Always outflow.
 
 IMPORTANT: When is_corporate_ambiguous is true, still populate amount, transaction_type,
 financial_tag, and description with your best guess — these will be used if the user
@@ -935,7 +941,7 @@ details and return a JSON object with exactly these fields:
 
   amount                 number         Grand total paid in NGN (strip ₦ symbols and commas)
   transaction_type       string         Always "outflow" for a receipt/purchase
-  financial_tag          string         One of: "revenue" | "cogs" | "opex" | "fixed_cost" | "capex" | "personal_essential" | "personal_luxury"
+  financial_tag          string         One of: "revenue" | "cogs" | "opex" | "fixed_cost" | "capex" | "food_groceries" | "transport" | "bills_utilities" | "personal_luxury" | "clothing" | "investment" | "family_gifting"
   description            string         "{vendor_name} — {top line items summary}"
   entity_prefix_guess    string|null    Purchasing business name if visible on the receipt, else null
   project_name           string|null    Project or engagement name if printed on the receipt or
@@ -971,8 +977,13 @@ Tag selection rules (Nigerian SME context):
                   packaging, courier, minor repairs, casual labour
   fixed_cost    → recurring monthly overheads: rent, permanent staff salaries, recurring
                   utility bills, monthly subscription invoices
-  personal_essential → groceries, pharmacy, household utilities, personal transport
-  personal_luxury    → restaurants, bars, entertainment, fashion, electronics for personal use
+  food_groceries  → supermarkets, food vendors, groceries, restaurant receipts
+  transport       → fuel station receipts, ride-hailing, logistics invoices
+  bills_utilities → utility bills, data/airtime top-ups, internet invoices, school fee receipts
+  personal_luxury → hotel stays, entertainment venues, streaming/subscription invoices
+  clothing        → clothing stores, shoe shops, fashion retailers
+  investment      → bank transfer receipts to savings/investment accounts
+  family_gifting  → gift shops, florists, event receipts for family celebrations
 
 Return only the JSON object. No explanation, no markdown fencing.
 `.trim();
@@ -1243,20 +1254,23 @@ async function runPipeline(
     }
   }
 
-  // ── Phase 2: 3-Tier shorthand + dot protocol ────────────────────────────
-  // Delimiter is a period/dot (.) so commas can appear freely inside amounts
-  // like "15,000" without breaking the parser.
-  // Only a dot that is NOT between two digits is treated as a separator —
-  // this keeps decimal amounts like "15.5k" in Tier 1 where they belong.
+  // ── Phase 2: 3-Tier shorthand + comma protocol ───────────────────────────
+  // Delimiter is a comma (,). Leading thousands-separator commas in the amount
+  // token (e.g. "15,000") are normalised away before the split so they never
+  // break the parser. "15,000, server fee, Favice" works correctly.
   if (!shortcutParsed && !mediaUrl) {
     const trimmedText = rawText.trim();
-    const hasDot      = /(?<!\d)\.(?!\d)/.test(trimmedText);
+    const hasComma    = trimmedText.includes(",");
 
-    if (hasDot) {
-      // ── Tier 2: Dot Protocol ────────────────────────────────────────────────
-      // Split on any dot that is not flanked by digits on both sides,
-      // trimming surrounding whitespace so "15k . fuel" and "15k.fuel" both work.
-      const parts  = trimmedText.split(/\s*(?<!\d)\.(?!\d)\s*/);
+    if (hasComma) {
+      // ── Tier 2: Comma Protocol ──────────────────────────────────────────────
+      // Strip thousands-separator commas from the leading amount token only,
+      // then split on all remaining commas.
+      const normalized = trimmedText.replace(
+        /^(\d[\d,]*)(k?)(?=\s*,|\s*$)/i,
+        (_, num, k) => num.replace(/,/g, "") + k,
+      );
+      const parts  = normalized.split(/,\s*/);
       const amount = parseAmountToken(parts[0] ?? "");
 
       if (amount !== null && amount > 0 && parts.length >= 2) {
@@ -1264,11 +1278,11 @@ async function runPipeline(
 
         if (parts.length === 2) {
           // 2-part: explicit Personal Ledger
-          console.log("[router/P2/T2] 2-part dot →", { amount, description });
+          console.log("[router/P2/T2] 2-part comma →", { amount, description });
           shortcutParsed = {
             amount,
             transaction_type:      "outflow",
-            financial_tag:         "personal_essential",
+            financial_tag:         "food_groceries",
             description,
             entity_prefix_guess:   null,
             project_name:          null,
@@ -1280,7 +1294,7 @@ async function runPipeline(
         } else {
           // 3-part: parallel DB lookup for scope
           const scopeHint = (parts[2] ?? "").trim().toLowerCase();
-          console.log("[router/P2/T2] 3-part dot →", { amount, description, scopeHint });
+          console.log("[router/P2/T2] 3-part comma →", { amount, description, scopeHint });
 
           const [bizResult, projResult] = await Promise.all([
             supabase
@@ -1331,7 +1345,7 @@ async function runPipeline(
       // amount unparseable → fall through to Phase 3/4
 
     } else {
-      // ── Tier 1: Simple shorthand (no dot separator) ────────────────────────
+      // ── Tier 1: Simple shorthand (no comma) ───────────────────────────────
       const sc = matchShortcut(trimmedText);
       if (sc) {
         console.log("[router/P2/T1] shorthand match:", { amount: sc.amount, label: sc.label });
@@ -1818,10 +1832,13 @@ const BUSINESS_TAXONOMY: Record<string, TaxonomyEntry> = {
 };
 
 const PERSONAL_TAXONOMY: Record<string, TaxonomyEntry> = {
-  "1": { tag: "personal_essential", label: "Groceries & Food",     transaction_type: "outflow", emoji: "1️⃣" },
-  "2": { tag: "bills_utilities",    label: "Bills & Utilities",    transaction_type: "outflow", emoji: "2️⃣" },
-  "3": { tag: "personal_luxury",    label: "Personal Luxury",      transaction_type: "outflow", emoji: "3️⃣" },
-  "4": { tag: "savings_investment", label: "Savings & Investment", transaction_type: "outflow", emoji: "4️⃣" },
+  "1": { tag: "food_groceries",  label: "Food & Groceries",            transaction_type: "outflow", emoji: "1️⃣" },
+  "2": { tag: "transport",       label: "Transport & Logistics",       transaction_type: "outflow", emoji: "2️⃣" },
+  "3": { tag: "bills_utilities", label: "Bills & Utilities",           transaction_type: "outflow", emoji: "3️⃣" },
+  "4": { tag: "personal_luxury", label: "Personal Luxury / Lifestyle", transaction_type: "outflow", emoji: "4️⃣" },
+  "5": { tag: "clothing",        label: "Clothing & Apparel",          transaction_type: "outflow", emoji: "5️⃣" },
+  "6": { tag: "investment",      label: "Savings & Investments",       transaction_type: "outflow", emoji: "6️⃣" },
+  "7": { tag: "family_gifting",  label: "Family & Gifting",            transaction_type: "outflow", emoji: "7️⃣" },
 };
 
 // ── HTTP handler ──────────────────────────────────────────────────────────────
@@ -1856,7 +1873,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // The correct taxonomy (business vs personal) is determined by the
     // business_id on the most recent transaction for this phone number.
     const digit = rawText.trim();
-    if (/^[1-5]$/.test(digit)) {
+    if (/^[1-9]$/.test(digit)) {
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
       const { data: lastTx } = await supabase
