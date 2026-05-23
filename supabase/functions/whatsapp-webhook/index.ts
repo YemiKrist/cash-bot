@@ -116,7 +116,9 @@ type FinancialTag =
   | "fixed_cost"
   | "capex"
   | "personal_essential"
-  | "personal_luxury";
+  | "personal_luxury"
+  | "bills_utilities"
+  | "savings_investment";
 
 interface ParsedTransaction {
   amount: number;
@@ -1241,14 +1243,20 @@ async function runPipeline(
     }
   }
 
-  // ── Phase 2: 3-Tier shorthand + comma protocol ───────────────────────────
+  // ── Phase 2: 3-Tier shorthand + dot protocol ────────────────────────────
+  // Delimiter is a period/dot (.) so commas can appear freely inside amounts
+  // like "15,000" without breaking the parser.
+  // Only a dot that is NOT between two digits is treated as a separator —
+  // this keeps decimal amounts like "15.5k" in Tier 1 where they belong.
   if (!shortcutParsed && !mediaUrl) {
     const trimmedText = rawText.trim();
-    const hasComma    = trimmedText.includes(",");
+    const hasDot      = /(?<!\d)\.(?!\d)/.test(trimmedText);
 
-    if (hasComma) {
-      // ── Tier 2: Comma Protocol ──────────────────────────────────────────────
-      const parts  = trimmedText.split(/,\s*/);
+    if (hasDot) {
+      // ── Tier 2: Dot Protocol ────────────────────────────────────────────────
+      // Split on any dot that is not flanked by digits on both sides,
+      // trimming surrounding whitespace so "15k . fuel" and "15k.fuel" both work.
+      const parts  = trimmedText.split(/\s*(?<!\d)\.(?!\d)\s*/);
       const amount = parseAmountToken(parts[0] ?? "");
 
       if (amount !== null && amount > 0 && parts.length >= 2) {
@@ -1256,7 +1264,7 @@ async function runPipeline(
 
         if (parts.length === 2) {
           // 2-part: explicit Personal Ledger
-          console.log("[router/P2/T2] 2-part comma →", { amount, description });
+          console.log("[router/P2/T2] 2-part dot →", { amount, description });
           shortcutParsed = {
             amount,
             transaction_type:      "outflow",
@@ -1272,7 +1280,7 @@ async function runPipeline(
         } else {
           // 3-part: parallel DB lookup for scope
           const scopeHint = (parts[2] ?? "").trim().toLowerCase();
-          console.log("[router/P2/T2] 3-part comma →", { amount, description, scopeHint });
+          console.log("[router/P2/T2] 3-part dot →", { amount, description, scopeHint });
 
           const [bizResult, projResult] = await Promise.all([
             supabase
@@ -1323,7 +1331,7 @@ async function runPipeline(
       // amount unparseable → fall through to Phase 3/4
 
     } else {
-      // ── Tier 1: Simple shorthand (no comma) ────────────────────────────────
+      // ── Tier 1: Simple shorthand (no dot separator) ────────────────────────
       const sc = matchShortcut(trimmedText);
       if (sc) {
         console.log("[router/P2/T1] shorthand match:", { amount: sc.amount, label: sc.label });
@@ -1774,28 +1782,46 @@ async function runPipeline(
     }
   }
 
+  const activeTaxonomy = businessId === null ? PERSONAL_TAXONOMY : BUSINESS_TAXONOMY;
+  const taxonomyLines = Object.entries(activeTaxonomy)
+    .map(([, entry]) => `${entry.emoji} ${entry.label}`);
+
   lines.push(
     "",
     "───",
     "Incorrect category? Reply with a number to change it:",
-    "1️⃣ Sales & Income",
-    "2️⃣ Stock & Materials",
-    "3️⃣ Daily Running Costs",
-    "4️⃣ Monthly Overheads",
-    "5️⃣ Equipment & Assets",
+    ...taxonomyLines,
   );
 
   const txId = insertedTx?.id;
   return txId ? { kind: "committed", text: lines.join("\n"), transactionId: txId } : lines.join("\n");
 }
 
-// ── Single-digit category override map ───────────────────────────────────────
-const DIGIT_TAG_MAP: Record<string, { tag: FinancialTag; label: string; transaction_type: TransactionType }> = {
-  "1": { tag: "revenue",    label: "Sales & Income",      transaction_type: "inflow"  },
-  "2": { tag: "cogs",       label: "Stock & Materials",   transaction_type: "outflow" },
-  "3": { tag: "opex",       label: "Daily Running Costs", transaction_type: "outflow" },
-  "4": { tag: "fixed_cost", label: "Monthly Overheads",   transaction_type: "outflow" },
-  "5": { tag: "capex",      label: "Equipment & Assets",  transaction_type: "outflow" },
+// ── Taxonomy maps ─────────────────────────────────────────────────────────────
+// Two separate sets so the digit interceptor and message builder can serve
+// the correct options depending on whether the last transaction is personal
+// or belongs to a business.
+
+interface TaxonomyEntry {
+  tag:              FinancialTag;
+  label:            string;
+  transaction_type: TransactionType;
+  emoji:            string;
+}
+
+const BUSINESS_TAXONOMY: Record<string, TaxonomyEntry> = {
+  "1": { tag: "revenue",    label: "Sales & Income",      transaction_type: "inflow",  emoji: "1️⃣" },
+  "2": { tag: "cogs",       label: "Stock & Materials",   transaction_type: "outflow", emoji: "2️⃣" },
+  "3": { tag: "opex",       label: "Daily Running Costs", transaction_type: "outflow", emoji: "3️⃣" },
+  "4": { tag: "fixed_cost", label: "Monthly Overheads",   transaction_type: "outflow", emoji: "4️⃣" },
+  "5": { tag: "capex",      label: "Equipment & Assets",  transaction_type: "outflow", emoji: "5️⃣" },
+};
+
+const PERSONAL_TAXONOMY: Record<string, TaxonomyEntry> = {
+  "1": { tag: "personal_essential", label: "Groceries & Food",     transaction_type: "outflow", emoji: "1️⃣" },
+  "2": { tag: "bills_utilities",    label: "Bills & Utilities",    transaction_type: "outflow", emoji: "2️⃣" },
+  "3": { tag: "personal_luxury",    label: "Personal Luxury",      transaction_type: "outflow", emoji: "3️⃣" },
+  "4": { tag: "savings_investment", label: "Savings & Investment", transaction_type: "outflow", emoji: "4️⃣" },
 };
 
 // ── HTTP handler ──────────────────────────────────────────────────────────────
@@ -1827,23 +1853,34 @@ Deno.serve(async (req: Request): Promise<Response> => {
   try {
     // ── Single-digit category override ─────────────────────────────────────
     // Must be checked first — before any session or pipeline logic.
+    // The correct taxonomy (business vs personal) is determined by the
+    // business_id on the most recent transaction for this phone number.
     const digit = rawText.trim();
-    const tagChoice = DIGIT_TAG_MAP[digit];
-    if (/^[1-5]$/.test(digit) && tagChoice) {
-      console.log(`[digit-override] "${digit}" → ${tagChoice.tag} for ${from}`);
+    if (/^[1-5]$/.test(digit)) {
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
       const { data: lastTx } = await supabase
         .from("transactions")
-        .select("id, amount")
+        .select("id, amount, business_id")
         .eq("phone_number", from)
         .order("created_at", { ascending: false })
         .limit(1)
-        .maybeSingle() as { data: { id: string; amount: number } | null };
+        .maybeSingle() as { data: { id: string; amount: number; business_id: string | null } | null };
 
       if (!lastTx) {
         return twimlMessage("⚠️ No recent transaction found to update.");
       }
+
+      const isPersonal  = lastTx.business_id === null;
+      const taxonomy    = isPersonal ? PERSONAL_TAXONOMY : BUSINESS_TAXONOMY;
+      const tagChoice   = taxonomy[digit];
+
+      if (!tagChoice) {
+        const maxDigit = Object.keys(taxonomy).length;
+        return twimlMessage(`⚠️ Please reply with a number between 1 and ${maxDigit}.`);
+      }
+
+      console.log(`[digit-override] "${digit}" → ${tagChoice.tag} (${isPersonal ? "personal" : "business"}) for ${from}`);
 
       // Normalise sign: inflow → positive, outflow → negative.
       const absAmount    = Math.abs(lastTx.amount);
@@ -1864,7 +1901,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         return twimlMessage(`❌ Could not update category: ${updateErr.message}`);
       }
 
-      console.log(`[digit-override] ✓ tx ${lastTx.id} updated to ${tagChoice.tag}`);
+      console.log(`[digit-override] ✓ tx ${lastTx.id} → ${tagChoice.tag}`);
       return twimlMessage(`✅ Category updated to ${tagChoice.label}!`);
     }
 
