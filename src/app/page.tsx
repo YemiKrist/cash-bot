@@ -328,6 +328,12 @@ function TransactionCard({
   onDelete?: (tx: Transaction) => void;
 }) {
   const isInflow = tx.transaction_type === "inflow";
+  const amountValue = Number(tx.amount);
+  const isOutflow = tx.transaction_type === "outflow" || amountValue < 0;
+  const formattedAmount = Math.abs(amountValue).toLocaleString("en-NG", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
   return (
     <div className="group flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-3.5 transition-colors active:bg-zinc-800">
       <div
@@ -366,10 +372,9 @@ function TransactionCard({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        <div className={`text-right text-sm font-semibold ${isInflow ? "text-emerald-400" : "text-red-400"}`}>
-          {!isInflow && <span className="font-sans text-xs">−</span>}
-          <Amt value={formatCurrency(tx.amount)} />
-        </div>
+        <span className={`text-right text-sm font-semibold ${isOutflow ? "text-red-500" : "text-green-500"}`}>
+          {isOutflow ? "-" : ""}₦{formattedAmount}
+        </span>
         <TxMenu tx={tx} onEdit={onEdit} onDelete={onDelete} />
       </div>
     </div>
@@ -463,7 +468,14 @@ function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTablePro
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800/60 bg-zinc-900">
-          {transactions.map((tx) => (
+          {transactions.map((tx) => {
+            const amountValue = Number(tx.amount);
+            const isOutflow = tx.transaction_type === "outflow" || amountValue < 0;
+            const formattedAmount = Math.abs(amountValue).toLocaleString("en-NG", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            });
+            return (
             <tr key={tx.id} className="group transition hover:bg-zinc-800/40">
               <td className="whitespace-nowrap px-5 py-4 text-zinc-400">{formatDate(tx.created_at)}</td>
               <td className="max-w-[220px] truncate px-5 py-4 text-zinc-200">
@@ -492,19 +504,15 @@ function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTablePro
                   {tagLabel(tx.financial_tag)}
                 </span>
               </td>
-              <td
-                className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${
-                  tx.transaction_type === "inflow" ? "text-emerald-400" : "text-red-400"
-                }`}
-              >
-                {tx.transaction_type === "outflow" && <span className="font-sans">−</span>}
-                <Amt value={formatCurrency(tx.amount)} />
+              <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${isOutflow ? "text-red-500" : "text-green-500"}`}>
+                <span>{isOutflow ? "-" : ""}₦{formattedAmount}</span>
               </td>
               <td className="py-4 pl-3 pr-5 text-right">
                 <TxMenu tx={tx} onEdit={onEdit} onDelete={onDelete} tableRow />
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
