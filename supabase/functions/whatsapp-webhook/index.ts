@@ -1255,22 +1255,20 @@ async function runPipeline(
   }
 
   // ── Phase 2: 3-Tier shorthand + comma protocol ───────────────────────────
-  // Delimiter is a comma (,). Leading thousands-separator commas in the amount
-  // token (e.g. "15,000") are normalised away before the split so they never
-  // break the parser. "15,000, server fee, Favice" works correctly.
+  // Delimiter is a comma (,). Before any tier runs, thousands-separator commas
+  // (commas sitting directly between two digits, e.g. "1,700") are stripped
+  // globally so they never collide with the protocol comma delimiter.
+  // "1,700, fuel, Favice" → "1700, fuel, Favice" → splits cleanly into 3 parts.
+  // Single-digit menu replies (1-7) are intercepted before this block and are
+  // unaffected. Natural-language fallback (Gemini) still receives rawText.
   if (!shortcutParsed && !mediaUrl) {
-    const trimmedText = rawText.trim();
-    const hasComma    = trimmedText.includes(",");
+    const trimmedText   = rawText.trim();
+    const sanitizedText = trimmedText.replace(/(\d),(\d)/g, "$1$2");
+    const hasComma      = sanitizedText.includes(",");
 
     if (hasComma) {
       // ── Tier 2: Comma Protocol ──────────────────────────────────────────────
-      // Strip thousands-separator commas from the leading amount token only,
-      // then split on all remaining commas.
-      const normalized = trimmedText.replace(
-        /^(\d[\d,]*)(k?)(?=\s*,|\s*$)/i,
-        (_, num, k) => num.replace(/,/g, "") + k,
-      );
-      const parts  = normalized.split(/,\s*/);
+      const parts  = sanitizedText.split(/,\s*/);
       const amount = parseAmountToken(parts[0] ?? "");
 
       if (amount !== null && amount > 0 && parts.length >= 2) {
@@ -1346,7 +1344,7 @@ async function runPipeline(
 
     } else {
       // ── Tier 1: Simple shorthand (no comma) ───────────────────────────────
-      const sc = matchShortcut(trimmedText);
+      const sc = matchShortcut(sanitizedText);
       if (sc) {
         console.log("[router/P2/T1] shorthand match:", { amount: sc.amount, label: sc.label });
         shortcutParsed = {
