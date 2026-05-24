@@ -17,11 +17,13 @@ function formatCurrency(n: number): string {
 function sumWhere(
   txs: Transaction[],
   type: Transaction["transaction_type"],
-  tag?: string
+  tag?: string,
+  excludeTag?: string,
 ): number {
   return txs.reduce((acc, tx) => {
     if (tx.transaction_type !== type) return acc;
     if (tag && tx.financial_tag !== tag) return acc;
+    if (excludeTag && tx.financial_tag === excludeTag) return acc;
     return acc + Math.abs(Number(tx.amount));
   }, 0);
 }
@@ -115,8 +117,9 @@ const PERSONAL_CATEGORIES = [
 
 function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
   const { totalIn, totalOut, net, savingsRate, categoryTotals } = useMemo(() => {
-    const totalIn     = sumWhere(transactions, "inflow");
-    const totalOut    = sumWhere(transactions, "outflow");
+    // Exclude investment transfers so KPIs reflect true operational cash flow.
+    const totalIn     = sumWhere(transactions, "inflow",  undefined, "investment");
+    const totalOut    = sumWhere(transactions, "outflow", undefined, "investment");
     const net         = totalIn - totalOut;
     const savingsRate = totalIn === 0 ? 0 : (net / totalIn) * 100;
 
