@@ -22,7 +22,7 @@ function sumWhere(
   return txs.reduce((acc, tx) => {
     if (tx.transaction_type !== type) return acc;
     if (tag && tx.financial_tag !== tag) return acc;
-    return acc + tx.amount;
+    return acc + Math.abs(Number(tx.amount));
   }, 0);
 }
 
@@ -140,7 +140,7 @@ function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
         />
         <StatCard
           label="Total Outflows"
-          value={formatCurrency(Math.abs(totalOut))}
+          value={formatCurrency(totalOut)}
           sub="All expenses paid"
         />
         <StatCard
