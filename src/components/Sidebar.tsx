@@ -113,11 +113,34 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
     if (!trimmed || !activeBusiness) return;
     setSavingProject(true);
     setProjectError(null);
-    const { error } = await supabase
+
+    const { data: newProj, error: projErr } = await supabase
       .from("projects")
-      .insert({ business_id: activeBusiness.id, name: trimmed });
+      .insert({ business_id: activeBusiness.id, name: trimmed })
+      .select("id")
+      .single() as { data: { id: string } | null; error: { message: string } | null };
+
+    if (projErr || !newProj) {
+      setSavingProject(false);
+      setProjectError(projErr?.message ?? "Project creation failed.");
+      return;
+    }
+
+    // Build lowercase keyword tokens from the project name for WhatsApp entity matching.
+    const keywords: string[] = trimmed
+      .toLowerCase()
+      .split(/[\s\-_/]+/)
+      .filter((w) => w.length >= 2);
+
+    const { error: subErr } = await supabase
+      .from("sub_projects")
+      .insert({ project_id: newProj.id, keywords }) as { error: { message: string } | null };
+
+    if (subErr) {
+      console.error("[Sidebar] sub_projects insert failed:", subErr.message);
+    }
+
     setSavingProject(false);
-    if (error) { setProjectError(error.message); return; }
     setNewProjectName("");
     setAddingProject(false);
     const { data } = await supabase

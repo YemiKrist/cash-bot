@@ -5,6 +5,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
+const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID") ?? "";
+const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN") ?? "";
 
 const GEMINI_ENDPOINT =
   `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
@@ -131,14 +133,28 @@ interface ParsedTransaction {
   entity_prefix_guess: string | null;
   project_name: string | null;
   is_corporate_ambiguous: boolean;
-  is_tag_ambiguous?: boolean;   // true when Gemini can't confidently assign a tag
+  is_tag_ambiguous?: boolean;
   is_valid_transaction: boolean;
+}
+
+interface ReceiptGeminiResponse {
+  amount: number;
+  type: string;
+  suggested_tag: string;
+  merchant: string;
+  itemized_summary: string;
+  entity_prefix_guess?: string | null;
+  project_name?: string | null;
+  is_corporate_ambiguous?: boolean;
+  is_tag_ambiguous?: boolean;
+  is_valid_transaction?: boolean;
 }
 
 interface BusinessRow {
   id: string;
   user_id: string;
   name: string;
+  projects?: { id: string; name: string }[];
 }
 
 // Project-level tax columns — source of truth for VAT and WHT tracking.
@@ -940,57 +956,62 @@ Return only the JSON object. No explanation, no markdown fencing.
 `.trim();
 
 const SYSTEM_INSTRUCTION_RECEIPT = `
-You are a world-class accounting assistant for Nigerian SMEs — retailers, traders,
-manufacturers, contractors, and service businesses.
+You are a world-class OCR and accounting assistant for Nigerian businesses and individuals.
 
-You will receive a receipt or invoice image. Extract all relevant financial
-details and return a JSON object with exactly these fields:
+You will receive a receipt, invoice, or financial document image. Perform full OCR on the image,
+then return a strict JSON object with exactly these fields:
 
-  amount                 number         Grand total paid in NGN (strip ₦ symbols and commas)
-  transaction_type       string         Always "outflow" for a receipt/purchase
-  financial_tag          string         One of: "revenue" | "cogs" | "opex" | "fixed_cost" | "capex" | "food_groceries" | "transport" | "bills_utilities" | "personal_luxury" | "clothing" | "investment" | "family_gifting"
-  description            string         "{vendor_name} — {top line items summary}"
-  entity_prefix_guess    string|null    Purchasing business name if visible on the receipt, else null
+  amount                 number         Grand total paid/received in NGN. Strip ₦ symbols and
+                                        thousands-separator commas before parsing.
+  type                   string         "outflow" for purchases/payments; "inflow" for refunds,
+                                        cashback, or money received.
+  suggested_tag          string         One of: "revenue" | "cogs" | "opex" | "fixed_cost" |
+                                        "capex" | "food_groceries" | "transport" |
+                                        "bills_utilities" | "personal_luxury" | "clothing" |
+                                        "investment" | "family_gifting"
+  merchant               string         The business/vendor name printed on the receipt (e.g.
+                                        "Shoprite", "Total Energies", "Chicken Republic"). Use
+                                        "Unknown Merchant" if not legible.
+  itemized_summary       string         A clean Markdown bulleted list of every line item on the
+                                        receipt, one bullet per item. Format each bullet as:
+                                        "• {item name} — ₦{amount}"
+                                        If quantities are shown, include them: "• Zobo (×3) — ₦900"
+                                        End with a totals line: "**Total: ₦{grand_total}**"
+                                        If the receipt has too many items to enumerate, group by
+                                        category and summarise.
+  entity_prefix_guess    string|null    Purchasing business name if printed as the buyer on the
+                                        receipt, else null.
   project_name           string|null    Project or engagement name if printed on the receipt or
-                                        invoice (e.g. in the line-item description, PO number field,
-                                        or memo). Return null if not present.
-  is_corporate_ambiguous boolean        Set to true when EITHER of these conditions applies:
-                                        (A) The receipt is unambiguously corporate: SaaS invoice, cloud
-                                            services, office supplies, professional services, equipment
-                                            for business use — AND the purchasing business name does not
-                                            appear on the receipt.
-                                        (B) The receipt is from a dual-use category — fuel station,
-                                            restaurant, hotel, ISP, utility provider — where the purchase
-                                            could equally be a business overhead or personal expense, AND
-                                            no business name is visible as the purchaser on the receipt.
-                                        Set to false for clearly personal/consumer receipts (grocery
-                                        supermarket, pharmacy, cinema, clothing retail) or when a
-                                        business name is clearly printed as the buyer.
-  is_tag_ambiguous       boolean        Set to true ONLY when the receipt items make it genuinely
-                                        unclear whether to use cogs, opex, capex, or fixed_cost — e.g.
-                                        a mixed receipt with both consumables and durable goods. Set to
-                                        false when the category is clear from the items.
-  is_valid_transaction   boolean        true if the image is a recognisable receipt, invoice, or financial
-                                        document with a legible total amount. Set to false if the image is
-                                        a selfie, screenshot of a chat, blank image, or otherwise contains
-                                        no extractable financial data.
+                                        invoice (PO number field, memo, or line-item description).
+                                        Return null if not present.
+  is_corporate_ambiguous boolean        true when EITHER:
+                                        (A) Receipt is unambiguously corporate (SaaS, office
+                                            supplies, professional services, equipment) AND no
+                                            buyer business name is printed.
+                                        (B) Receipt is dual-use (fuel station, restaurant, hotel,
+                                            ISP, utility) AND no buyer business name is visible.
+                                        false for clearly personal/consumer receipts or when a
+                                        business name is printed as the buyer.
+  is_tag_ambiguous       boolean        true ONLY when items make it genuinely unclear which tag
+                                        applies (e.g. mixed consumables + durable goods on one
+                                        receipt). false when the category is clear.
+  is_valid_transaction   boolean        true if the image is a recognisable receipt, invoice, or
+                                        financial document with a legible total. false if the
+                                        image is a selfie, blank page, screenshot of a chat, or
+                                        otherwise contains no extractable financial data.
 
-Tag selection rules (Nigerian SME context):
-  cogs          → purchased goods for resale, cleared/imported goods, raw production materials
-                  (fabric, cement, foodstuff wholesale, spare parts stock, goods for market)
-  capex         → durable long-term assets: generators, machinery, vehicles, laptops, heavy
-                  tools, industrial equipment, shop/office fit-outs
-  opex          → day-to-day running costs: fuel, business transport, data, advertising,
-                  packaging, courier, minor repairs, casual labour
-  fixed_cost    → recurring monthly overheads: rent, permanent staff salaries, recurring
-                  utility bills, monthly subscription invoices
+Tag selection rules (Nigerian context):
+  cogs          → goods for resale, raw materials, wholesale stock, imported goods
+  capex         → durable assets: generators, laptops, machinery, vehicles, shop fit-outs
+  opex          → running costs: fuel, business transport, data, ads, packaging, courier, repairs
+  fixed_cost    → recurring overheads: rent, staff salaries, recurring subscription invoices
   food_groceries  → supermarkets, food vendors, groceries, restaurant receipts
   transport       → fuel station receipts, ride-hailing, logistics invoices
-  bills_utilities → utility bills, data/airtime top-ups, internet invoices, school fee receipts
-  personal_luxury → hotel stays, entertainment venues, streaming/subscription invoices
+  bills_utilities → utility bills, data/airtime top-ups, internet invoices, school fees
+  personal_luxury → hotel stays, entertainment, streaming/subscription services
   clothing        → clothing stores, shoe shops, fashion retailers
-  investment      → bank transfer receipts to savings/investment accounts
-  family_gifting  → gift shops, florists, event receipts for family celebrations
+  investment      → transfer receipts to savings/investment accounts
+  family_gifting  → gift shops, florists, celebration/event receipts
 
 Return only the JSON object. No explanation, no markdown fencing.
 `.trim();
@@ -1000,11 +1021,33 @@ Return only the JSON object. No explanation, no markdown fencing.
 async function downloadTwilioImage(
   mediaUrl: string,
 ): Promise<{ buffer: Uint8Array; mimeType: string }> {
-  const res = await fetch(mediaUrl);
-  if (!res.ok) throw new Error(`Twilio image fetch ${res.status}: ${mediaUrl}`);
+  const sid   = Deno.env.get("TWILIO_ACCOUNT_SID")?.trim();
+  const token = Deno.env.get("TWILIO_AUTH_TOKEN")?.trim();
+  console.log(`[Twilio Auth Check] SID exists: ${!!sid}, Token exists: ${!!token}`);
 
-  const mimeType = res.headers.get("Content-Type") ?? "image/jpeg";
-  const arrayBuffer = await res.arrayBuffer();
+  const authHeader = `Basic ${btoa(`${sid}:${token}`)}`;
+
+  // Step 1: Hit Twilio authenticated endpoint; capture redirect without following it.
+  let response = await fetch(mediaUrl, {
+    method: "GET",
+    headers: { "Authorization": authHeader },
+    redirect: "manual",
+  });
+
+  // Step 2: Twilio redirects media to S3 — follow with no auth header.
+  if (response.status >= 300 && response.status < 400) {
+    const redirectUrl = response.headers.get("location");
+    if (!redirectUrl) throw new Error("Twilio redirect missing Location header");
+    console.log("[Twilio] Following redirect to storage bucket...");
+    response = await fetch(redirectUrl, { method: "GET" });
+  }
+
+  if (!response.ok) {
+    throw new Error(`Twilio media download failed with status: ${response.status}`);
+  }
+
+  const mimeType = response.headers.get("Content-Type") ?? "image/jpeg";
+  const arrayBuffer = await response.arrayBuffer();
   return { buffer: new Uint8Array(arrayBuffer), mimeType };
 }
 
@@ -1063,9 +1106,22 @@ async function geminiPost(
   }
 }
 
-async function extractFromText(rawText: string): Promise<ParsedTransaction> {
+async function extractFromText(rawText: string, entityMap: string): Promise<ParsedTransaction> {
+  const instruction = [
+    SYSTEM_INSTRUCTION_TEXT,
+    "",
+    "LIVE ENTITY MAP — The user's registered businesses and their sub-projects:",
+    entityMap,
+    "",
+    "Entity resolution rules (applied after tag and amount extraction):",
+    "- If an exact or near-exact business name from the map appears in the message, set entity_prefix_guess to that business name.",
+    "- If a sub-project name from the map is mentioned (e.g. 'CACSA App', 'NordVibe'), set project_name to that sub-project name AND set entity_prefix_guess to its parent business name.",
+    "- Whenever entity_prefix_guess is successfully resolved from the entity map, set is_corporate_ambiguous to false — the transaction is already routed.",
+    "- Only extract project_name values that appear in the entity map. Do NOT guess or invent project names.",
+  ].join("\n");
+
   const res = await geminiPost("extractFromText", {
-    systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_TEXT }] },
+    systemInstruction: { parts: [{ text: instruction }] },
     contents: [{ parts: [{ text: rawText }] }],
     generationConfig: { responseMimeType: "application/json" },
   });
@@ -1085,16 +1141,26 @@ async function extractFromImage(
   rawText: string,
   imageBuffer: Uint8Array,
   mimeType: string,
+  entityMap: string,
 ): Promise<ParsedTransaction> {
   const base64 = toBase64(imageBuffer);
 
+  const receiptInstruction = [
+    SYSTEM_INSTRUCTION_RECEIPT,
+    "",
+    "LIVE ENTITY MAP — The user's registered businesses and their sub-projects:",
+    entityMap,
+    "",
+    "If the merchant or buyer business name on the receipt matches a name in the entity map, populate entity_prefix_guess with that exact business name.",
+  ].join("\n");
+
   const res = await geminiPost("extractFromImage", {
-    systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION_RECEIPT }] },
+    systemInstruction: { parts: [{ text: receiptInstruction }] },
     contents: [
       {
         parts: [
           { inlineData: { mimeType, data: base64 } },
-          { text: rawText || "Extract the financial details from this receipt." },
+          { text: rawText || "OCR this receipt and extract all financial details." },
         ],
       },
     ],
@@ -1109,7 +1175,20 @@ async function extractFromImage(
   const data = await res.json();
   const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   if (!text) throw new Error("Gemini vision: empty response");
-  return JSON.parse(text) as ParsedTransaction;
+
+  const receipt = JSON.parse(text) as ReceiptGeminiResponse;
+
+  return {
+    amount:                Math.abs(Number(receipt.amount)),
+    transaction_type:      receipt.type === "inflow" ? "inflow" : "outflow",
+    financial_tag:         (receipt.suggested_tag as FinancialTag) ?? "food_groceries",
+    description:           receipt.itemized_summary || `${receipt.merchant} — receipt`,
+    entity_prefix_guess:   receipt.entity_prefix_guess ?? null,
+    project_name:          receipt.project_name ?? null,
+    is_corporate_ambiguous: receipt.is_corporate_ambiguous ?? false,
+    is_tag_ambiguous:      receipt.is_tag_ambiguous ?? false,
+    is_valid_transaction:  receipt.is_valid_transaction ?? true,
+  };
 }
 
 // ── Main pipeline ─────────────────────────────────────────────────────────────
@@ -1132,11 +1211,24 @@ async function runPipeline(
   // Primary: first row in businesses. Fallback: first user_id in transactions.
   const { data: businesses, error: bizErr } = await supabase
     .from("businesses")
-    .select("id, user_id, name")
+    .select("id, user_id, name, projects(id, name)")
     .order("created_at", { ascending: true })
     .limit(50) as { data: BusinessRow[] | null; error: unknown };
 
   if (bizErr) console.error("[pipeline] businesses fetch error:", bizErr);
+
+  // Build a flat entity map string injected into Gemini so it can resolve
+  // sub-project names → parent business without prompting the user.
+  const entityMapContext = [
+    ...(businesses ?? []).map((b) => {
+      const projNames = b.projects?.length
+        ? b.projects.map((p) => p.name).join(", ")
+        : "no sub-projects";
+      return `- ${b.name} (Sub-projects: ${projNames})`;
+    }),
+    "- Personal Ledger",
+  ].join("\n");
+  console.log("[pipeline] Entity map built:\n" + entityMapContext);
 
   let userId: string = businesses?.[0]?.user_id ?? "";
 
@@ -1408,11 +1500,22 @@ async function runPipeline(
       const { buffer, mimeType } = await downloadTwilioImage(mediaUrl);
       imageBuffer = buffer;
       imageMimeType = mimeType;
-      mediaStorageUrl = await uploadToStorage(supabase, buffer, mimeType);
-      console.log("[pipeline] Receipt stored →", mediaStorageUrl);
+      // Storage upload is best-effort — failure should not block OCR.
+      try {
+        mediaStorageUrl = await uploadToStorage(supabase, buffer, mimeType);
+        console.log("[pipeline] Receipt stored →", mediaStorageUrl);
+      } catch (uploadErr) {
+        console.error("[pipeline] Storage upload failed (non-fatal):", uploadErr);
+      }
     } catch (err) {
-      // Non-fatal: log and fall through to text-only parsing
-      console.error("[pipeline] Image download/upload failed:", err);
+      console.error("[pipeline] Image download failed:", err);
+      // When the user sent only an image (no text), falling through to text
+      // parsing would give Gemini an empty prompt and cause hallucinations.
+      // Return an explicit error message instead.
+      if (!rawText.trim()) {
+        return "⚠️ Could not download or read this receipt image. Please verify the photo clarity or type the amount manually.";
+      }
+      // If text was also present, continue with text-only parsing below.
     }
   }
 
@@ -1426,10 +1529,10 @@ async function runPipeline(
   } else {
     try {
       if (imageBuffer) {
-        parsed = await extractFromImage(rawText, imageBuffer, imageMimeType);
+        parsed = await extractFromImage(rawText, imageBuffer, imageMimeType, entityMapContext);
         console.log("[router/P4] Gemini vision parsed:", parsed);
       } else {
-        parsed = await extractFromText(rawText);
+        parsed = await extractFromText(rawText, entityMapContext);
         console.log("[router/P4] Gemini text parsed:", parsed);
       }
     } catch (err) {
@@ -1445,8 +1548,7 @@ async function runPipeline(
     return [
       "ℹ️ I couldn't find a transaction amount in that message.",
       "",
-      "To log an expense, please resend the full sentence including the amount and business or project.",
-      `Example: "Spent 55k on transportation for Favsys"`,
+      'To log an expense, send it with an amount — e.g. "Spent 5k on lunch" or "Received 80k from client".',
     ].join("\n");
   }
 
