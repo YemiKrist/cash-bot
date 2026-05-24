@@ -11,6 +11,16 @@ const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN") ?? "";
 const GEMINI_ENDPOINT =
   `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
+// Reusable footer appended to any instructional message so users always know
+// the fast-path comma protocol exists alongside natural-language AI parsing.
+const QUICK_LOG_FOOTER = [
+  "⚡ Option B — Quick-Log Formula (Bypasses AI & Saves Tokens):",
+  "👉 [Amount], [Description], [Business/Ledger Name]",
+  "• 15k, fuel, Favsys",
+  "• 1,700, YouTube sub, personal",
+  "• 61,358, CACSA App, Thinktech",
+].join("\n");
+
 // ── TwiML helpers ─────────────────────────────────────────────────────────────
 
 function escapeXml(s: string): string {
@@ -612,6 +622,17 @@ async function clearSession(
   } catch { /* non-fatal */ }
 }
 
+// Strict business-name matcher used wherever user-typed (or Gemini-extracted)
+// text is compared against a stored business name.
+// • ≥ 3 chars: allow substring containment in either direction.
+// • < 3 chars: require exact case-insensitive equality only — prevents a
+//   single stray character like "G" from matching "Lighthouse".
+function matchesBusiness(input: string, businessName: string): boolean {
+  const a = input.toLowerCase().trim();
+  const b = businessName.toLowerCase();
+  return a.length >= 3 ? (b.includes(a) || a.includes(b)) : b === a;
+}
+
 async function handleSessionState(
   supabase: ReturnType<typeof createClient>,
   from: string,
@@ -643,18 +664,34 @@ async function handleSessionState(
     let resolvedBusinessId: string | null = null;
     let matched = false;
 
-    // "personal", "👤", or "1" → Personal Ledger
-    if (/^(personal|1|👤|personal ledger)$/i.test(t)) {
+    // ── 1. Numeric option: "1" = Personal Ledger, "2" = businesses[0], etc.
+    const digitMatch = t.match(/^(\d+)$/);
+    if (digitMatch) {
+      const n = parseInt(digitMatch[1], 10);
+      if (n === 1) {
+        resolvedBusinessId = null;
+        matched = true;
+        console.log("[session] AWAITING_SCOPE_SELECTION → Personal Ledger (digit 1)");
+      } else {
+        const biz = businesses[n - 2]; // "2" → index 0, "3" → index 1, …
+        if (biz) {
+          resolvedBusinessId = biz.id;
+          matched = true;
+          console.log(`[session] AWAITING_SCOPE_SELECTION → "${biz.name}" (digit ${n})`);
+        }
+      }
+    }
+
+    // ── 2. Keyword: "personal" / "👤" / "personal ledger"
+    if (!matched && /^(personal|👤|personal ledger)$/i.test(t)) {
       resolvedBusinessId = null;
       matched = true;
-      console.log("[session] AWAITING_SCOPE_SELECTION → Personal Ledger");
-    } else {
-      // Try to match against a known business name (partial or exact).
-      const bizMatch = businesses.find(
-        (b) =>
-          b.name.toLowerCase().includes(t) ||
-          t.includes(b.name.toLowerCase()),
-      );
+      console.log("[session] AWAITING_SCOPE_SELECTION → Personal Ledger (keyword)");
+    }
+
+    // ── 3. Name match with ≥3-char guard (no single-character false positives)
+    if (!matched) {
+      const bizMatch = businesses.find((b) => matchesBusiness(t, b.name));
       if (bizMatch) {
         resolvedBusinessId = bizMatch.id;
         matched = true;
@@ -663,18 +700,61 @@ async function handleSessionState(
     }
 
     if (!matched) {
-      // Unrecognised reply — keep the session alive and re-prompt once.
+      // ── Sub-project keyword fallback ──────────────────────────────────────
+      // Before re-prompting, check whether the user's reply matches any
+      // keyword token in sub_projects. A match auto-resolves the parent
+      // business and skips the scope prompt entirely.
+      const tokens = t.split(/[\s\-_/]+/).filter((w) => w.length >= 2);
+      if (tokens.length > 0) {
+        const { data: subMatch } = await supabase
+          .from("sub_projects")
+          .select("project_id")
+          .overlaps("keywords", tokens)
+          .limit(1)
+          .maybeSingle() as { data: { project_id: string } | null };
+
+        if (subMatch?.project_id) {
+          const { data: projRow } = await supabase
+            .from("projects")
+            .select("business_id")
+            .eq("id", subMatch.project_id)
+            .maybeSingle() as { data: { business_id: string } | null };
+
+          if (projRow?.business_id) {
+            console.log(`[session] AWAITING_SCOPE_SELECTION → sub_project keyword match → business ${projRow.business_id}`);
+            await clearSession(supabase, from);
+            const subProjParsed: ParsedTransaction = {
+              amount:                ctx.amount,
+              transaction_type:      ctx.transaction_type,
+              financial_tag:         ctx.financial_tag,
+              description:           ctx.description,
+              entity_prefix_guess:   null,
+              project_name:          null,
+              is_corporate_ambiguous: false,
+              is_valid_transaction:  true,
+            };
+            return { kind: "route", parsed: subProjParsed, businessId: projRow.business_id };
+          }
+        }
+      }
+
+      // Still no match — re-prompt with numbered list and escape instructions.
       console.log("[session] AWAITING_SCOPE_SELECTION — unrecognised reply, re-prompting");
-      const bizLines = businesses.map((b) => `• ${b.name}`).join("\n");
+      const bizOptions = businesses.map((b, i) => `${i + 2}️⃣  ${b.name}`).join("\n");
       return {
         kind: "reply",
         message: [
-          "❓ I didn't recognise that business or project. Please reply with:",
+          "❓ I couldn't automatically map that business or project name.",
           "",
-          '• "personal" — Personal Ledger',
-          bizLines,
+          "👉 Reply with the exact name or option number:",
+          "1️⃣  Personal Ledger",
+          bizOptions,
           "",
-          "Or just type the business name exactly as listed above.",
+          "💡 Pro-tips:",
+          '• Want to start fresh? Reply "Reset" at any time.',
+          "• To map a new app automatically next time, add it to your project configuration on the web dashboard!",
+          "",
+          QUICK_LOG_FOOTER,
         ].join("\n"),
       };
     }
@@ -721,16 +801,21 @@ async function handleSessionState(
       }
       // idx === 0 → Personal Ledger (defaults remain null)
     } else {
-      const lower = t.toLowerCase();
-      if (!/^(personal|👤|personal\s+ledger)$/i.test(lower)) {
-        const match = businesses.find(
-          (b) => b.name.toLowerCase().includes(lower) || lower.includes(b.name.toLowerCase()),
-        );
+      if (!/^(personal|👤|personal\s+ledger)$/i.test(t)) {
+        const match = businesses.find((b) => matchesBusiness(t, b.name));
         if (match) {
           chosenBizId = match.id;
           chosenName  = match.name;
         } else {
-          return { kind: "reply", message: `❓ I didn't recognise "${t}". Please reply with a number from the list.` };
+          const maxOpt = businesses.length + 1;
+          return {
+            kind: "reply",
+            message: [
+              `⚠️ Unrecognized choice. Please reply with the exact option number (1–${maxOpt}) or type "Reset" to cancel this transaction entirely.`,
+              "",
+              QUICK_LOG_FOOTER,
+            ].join("\n"),
+          };
         }
       }
     }
@@ -786,10 +871,8 @@ async function handleSessionState(
 
     let resolvedBizId: string | null = null;
     if (ctx.entity_prefix_guess && businesses.length) {
-      const guess = ctx.entity_prefix_guess.toLowerCase();
-      const match = businesses.find(
-        (b) => b.name.toLowerCase().includes(guess) || guess.includes(b.name.toLowerCase()),
-      );
+      const guess = ctx.entity_prefix_guess;
+      const match = businesses.find((b) => matchesBusiness(guess, b.name));
       if (match) resolvedBizId = match.id;
     }
 
@@ -1313,10 +1396,7 @@ async function runPipeline(
         // Resolve businessId from entity_prefix_guess if present
         let tagBizId: string | null = null;
         if (ctx.entity_prefix_guess && businesses?.length) {
-          const guess = ctx.entity_prefix_guess.toLowerCase();
-          const match = businesses.find(
-            (b) => b.name.toLowerCase().includes(guess) || guess.includes(b.name.toLowerCase()),
-          );
+          const match = businesses.find((b) => matchesBusiness(ctx.entity_prefix_guess!, b.name));
           if (match) tagBizId = match.id;
         }
 
@@ -1548,7 +1628,11 @@ async function runPipeline(
     return [
       "ℹ️ I couldn't find a transaction amount in that message.",
       "",
-      'To log an expense, send it with an amount — e.g. "Spent 5k on lunch" or "Received 80k from client".',
+      "📝 Option A — Talk to CashBot (AI Parsing):",
+      '• "Spent 5k on fuel for Favsys"',
+      '• "Received 100k personal income"',
+      "",
+      QUICK_LOG_FOOTER,
     ].join("\n");
   }
 
@@ -1597,12 +1681,7 @@ async function runPipeline(
   if (overrideBusinessId !== undefined) {
     console.log(`[router/P1] business override: ${overrideBusinessId ?? "Personal Ledger"}`);
   } else if (parsed.entity_prefix_guess && businesses?.length) {
-    const guess = parsed.entity_prefix_guess.trim().toLowerCase();
-    const match = businesses.find(
-      (b) =>
-        b.name.toLowerCase().includes(guess) ||
-        guess.includes(b.name.toLowerCase()),
-    );
+    const match = businesses.find((b) => matchesBusiness(parsed.entity_prefix_guess!, b.name));
     if (match) {
       businessId = match.id;
       console.log(`[pipeline] Routed → business "${match.name}" (${match.id})`);
@@ -1975,6 +2054,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
   });
 
   try {
+    // ── Global command interceptor ──────────────────────────────────────────
+    // Checked before digit overrides, sessions, and the full pipeline so the
+    // user can always escape a stuck state with a single word.
+    const cmd = rawText.toLowerCase().trim();
+    if (/^(reset|cancel|restart|clear)$/.test(cmd)) {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      await clearSession(supabase, from);
+      console.log(`[command-interceptor] "${cmd}" → session cleared for ${from}`);
+      return twimlMessage(
+        [
+          "🔄 Session cleared! CashBot is ready for a fresh entry.",
+          "",
+          "📝 Option A — Talk to CashBot (AI Parsing):",
+          '• "Spent 5k on fuel for Favsys"',
+          '• "Received 100k personal income"',
+          "",
+          QUICK_LOG_FOOTER,
+        ].join("\n"),
+      );
+    }
+
     // ── Single-digit category override ─────────────────────────────────────
     // Must be checked first — before any session or pipeline logic.
     // The correct taxonomy (business vs personal) is determined by the
