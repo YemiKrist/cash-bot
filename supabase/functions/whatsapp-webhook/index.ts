@@ -919,7 +919,14 @@ Tag selection rules (Nigerian SME context):
   bills_utilities → recurring bills — electricity (NEPA/PHCN), water, internet/broadband, data, airtime, school fees. Always outflow.
   personal_luxury → lifestyle spending — fashion events, nightlife, holidays, subscriptions (Netflix/Spotify), hotels for leisure. Always outflow.
   clothing        → clothes, shoes, accessories, fashion purchases. Always outflow.
-  investment      → savings transfers, investment deposits, pension contributions, money market, mutual funds. Always outflow.
+  investment      → Two directions depending on context:
+                    • OUTFLOW when the user is depositing, contributing, or locking funds away —
+                      e.g. "put 50k in PiggyVest", "bought treasury bills", "pension deduction".
+                    • INFLOW when the user receives money back from savings or investments —
+                      keywords: "cashed out", "liquidated", "withdrew from savings", "investment payout",
+                      "PiggyVest withdrawal", "Cowrywise", "Risevest payout", "fixed deposit matured",
+                      "withdrew my savings". Set transaction_type to "inflow" and amount to the positive
+                      value received. Do NOT mark these as is_corporate_ambiguous.
   family_gifting  → gifts, family support, remittances, celebrations (weddings, birthdays), charity, church offerings. Always outflow.
 
 IMPORTANT: When is_corporate_ambiguous is true, still populate amount, transaction_type,
@@ -1876,11 +1883,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
       const { data: lastTx } = await supabase
         .from("transactions")
-        .select("id, amount, business_id")
+        .select("id, amount, business_id, transaction_type")
         .eq("phone_number", from)
         .order("created_at", { ascending: false })
         .limit(1)
-        .maybeSingle() as { data: { id: string; amount: number; business_id: string | null } | null };
+        .maybeSingle() as {
+          data: {
+            id: string;
+            amount: number;
+            business_id: string | null;
+            transaction_type: TransactionType;
+          } | null;
+        };
 
       if (!lastTx) {
         return twimlMessage("⚠️ No recent transaction found to update.");
@@ -1895,17 +1909,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
         return twimlMessage(`⚠️ Please reply with a number between 1 and ${maxDigit}.`);
       }
 
-      console.log(`[digit-override] "${digit}" → ${tagChoice.tag} (${isPersonal ? "personal" : "business"}) for ${from}`);
+      // Option 6 (investment) on personal: if the original entry was an inflow
+      // (liquidation / savings payout), preserve that direction rather than
+      // overriding to outflow (deposit). All other tags use the taxonomy default.
+      const resolvedType: TransactionType =
+        digit === "6" && isPersonal && lastTx.transaction_type === "inflow"
+          ? "inflow"
+          : tagChoice.transaction_type;
+
+      console.log(`[digit-override] "${digit}" → ${tagChoice.tag} (${isPersonal ? "personal" : "business"}, ${resolvedType}) for ${from}`);
 
       // Normalise sign: inflow → positive, outflow → negative.
       const absAmount    = Math.abs(lastTx.amount);
-      const signedAmount = tagChoice.transaction_type === "inflow" ? absAmount : -absAmount;
+      const signedAmount = resolvedType === "inflow" ? absAmount : -absAmount;
 
       const { error: updateErr } = await supabase
         .from("transactions")
         .update({
           financial_tag:    tagChoice.tag,
-          transaction_type: tagChoice.transaction_type,
+          transaction_type: resolvedType,
           amount:           signedAmount,
         })
         .eq("id", lastTx.id)
