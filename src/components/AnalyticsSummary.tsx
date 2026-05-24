@@ -115,14 +115,29 @@ const PERSONAL_CATEGORIES = [
 
 function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
   const { totalIn, totalOut, net, savingsRate, categoryTotals } = useMemo(() => {
-    const totalIn  = sumWhere(transactions, "inflow");
-    const totalOut = sumWhere(transactions, "outflow");
-    const net        = totalIn - totalOut;
+    const totalIn     = sumWhere(transactions, "inflow");
+    const totalOut    = sumWhere(transactions, "outflow");
+    const net         = totalIn - totalOut;
     const savingsRate = totalIn === 0 ? 0 : (net / totalIn) * 100;
-    const categoryTotals = PERSONAL_CATEGORIES.map((c) => ({
-      ...c,
-      amount: sumWhere(transactions, "outflow", c.tag),
-    }));
+
+    const categoryTotals = PERSONAL_CATEGORIES.map((c) => {
+      if (c.tag !== "investment") {
+        // Standard categories: absolute outflow sum only.
+        return { ...c, amount: sumWhere(transactions, "outflow", c.tag) };
+      }
+
+      // Investment: net tracking — deposits add, liquidations subtract.
+      // Inflows (payouts/withdrawals) reduce the displayed net allocation.
+      const netInvestment = transactions.reduce((acc, tx) => {
+        if (tx.financial_tag !== "investment") return acc;
+        const absAmt = Math.abs(Number(tx.amount));
+        const isLiquidation = tx.transaction_type === "inflow" || Number(tx.amount) > 0;
+        return isLiquidation ? acc - absAmt : acc + absAmt;
+      }, 0);
+
+      return { ...c, amount: Math.max(0, netInvestment) };
+    });
+
     return { totalIn, totalOut, net, savingsRate, categoryTotals };
   }, [transactions]);
 
