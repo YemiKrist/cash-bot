@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import BusinessSettings from "@/components/BusinessSettings";
@@ -218,6 +219,8 @@ function MobileSummaryBar({ transactions }: { transactions: Transaction[] }) {
 }
 
 // ── Per-row action menu (⋮ hamburger) ────────────────────────────────────────
+// Rendered via a React portal so it escapes overflow-x-auto / overflow-hidden
+// table wrappers that would otherwise clip top and bottom rows.
 
 function TxMenu({
   tx,
@@ -230,38 +233,50 @@ function TxMenu({
   onDelete?: (tx: Transaction) => void;
   tableRow?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen]           = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle]  = useState<React.CSSProperties>({});
+  const btnRef  = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  function computePosition() {
+    if (!btnRef.current) return;
+    const rect      = btnRef.current.getBoundingClientRect();
+    const menuRight = window.innerWidth - rect.right;
+    // Open downward unless fewer than 120px remain below the button.
+    if (window.innerHeight - rect.bottom < 120) {
+      setMenuStyle({ position: "fixed", bottom: window.innerHeight - rect.top + 4, right: menuRight, zIndex: 9999 });
+    } else {
+      setMenuStyle({ position: "fixed", top: rect.bottom + 4,                      right: menuRight, zIndex: 9999 });
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
+
     function onOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        setConfirming(false);
-      }
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+      setConfirming(false);
     }
+    function onScroll() { setOpen(false); setConfirming(false); }
+
     document.addEventListener("mousedown", onOutside);
-    return () => document.removeEventListener("mousedown", onOutside);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onOutside);
+      window.removeEventListener("scroll", onScroll, true);
+    };
   }, [open]);
 
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => { setOpen((o) => !o); setConfirming(false); }}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200"
-        aria-label="Transaction options"
-      >
-        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-          <circle cx="12" cy="5"  r="1.5" />
-          <circle cx="12" cy="12" r="1.5" />
-          <circle cx="12" cy="19" r="1.5" />
-        </svg>
-      </button>
-
-      {open && (
-        <div className="absolute right-0 bottom-full z-50 mb-1 w-40 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+  const dropdown = open
+    ? createPortal(
+        <div
+          ref={menuRef}
+          style={menuStyle}
+          className="w-40 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl"
+        >
           {confirming ? (
             <div className="px-3 py-3">
               <p className="mb-2.5 text-xs font-medium text-zinc-300">Delete this transaction?</p>
@@ -310,8 +325,30 @@ function TxMenu({
               )}
             </>
           )}
-        </div>
-      )}
+        </div>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <div>
+      <button
+        ref={btnRef}
+        onClick={() => {
+          if (!open) computePosition();
+          setOpen((o) => !o);
+          setConfirming(false);
+        }}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200"
+        aria-label="Transaction options"
+      >
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5"  r="1.5" />
+          <circle cx="12" cy="12" r="1.5" />
+          <circle cx="12" cy="19" r="1.5" />
+        </svg>
+      </button>
+      {dropdown}
     </div>
   );
 }
