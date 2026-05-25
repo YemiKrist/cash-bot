@@ -177,6 +177,34 @@ function downloadCSV(
   URL.revokeObjectURL(url);
 }
 
+// ── Print via hidden iframe — real PDF in Chrome, Safari, Firefox ─────────────
+
+function printDocumentAsPDF(html: string): void {
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText =
+    "position:fixed;top:0;left:-9999px;width:1px;height:1px;border:0;opacity:0;pointer-events:none;";
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+  if (!doc) { document.body.removeChild(iframe); return; }
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  setTimeout(() => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } finally {
+      setTimeout(() => {
+        if (document.body.contains(iframe)) document.body.removeChild(iframe);
+      }, 1000);
+    }
+  }, 300);
+}
+
 // ── PDF export ────────────────────────────────────────────────────────────────
 
 function exportPDF(
@@ -327,14 +355,7 @@ function exportPDF(
 </body>
 </html>`;
 
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = `${workspaceName.replace(/\s+/g, "_")}${activeProjectName ? `_${activeProjectName.replace(/\s+/g, "_")}` : ""}_Performance_Report.html`;
-  document.body.appendChild(link);
-  link.click();
-  URL.revokeObjectURL(link.href);
-  link.remove();
+  printDocumentAsPDF(html);
 }
 
 // ── Category metadata ─────────────────────────────────────────────────────────

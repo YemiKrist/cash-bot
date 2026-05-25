@@ -503,17 +503,37 @@ function buildStatementHTML(
 </html>`;
 }
 
-// ── Silent Blob anchor download — zero pop-up risk ───────────────────────────
+// ── Print via hidden iframe — produces a real PDF in Chrome, Safari & Firefox ─
+// The browser's native print pipeline is used. Chrome shows "Save as PDF" as the
+// default destination; Safari and Firefox have equivalent PDF options. Using an
+// iframe (not window.open) avoids popup-blocker interference entirely.
 
-function downloadAsBlob(html: string, filename: string): void {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  URL.revokeObjectURL(link.href);
-  link.remove();
+function printDocumentAsPDF(html: string): void {
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText =
+    "position:fixed;top:0;left:-9999px;width:1px;height:1px;border:0;opacity:0;pointer-events:none;";
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+  if (!doc) { document.body.removeChild(iframe); return; }
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  // 300 ms gives system fonts and layout a full render pass before print fires.
+  setTimeout(() => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } finally {
+      // Remove iframe after the print dialog has had time to open.
+      setTimeout(() => {
+        if (document.body.contains(iframe)) document.body.removeChild(iframe);
+      }, 1000);
+    }
+  }, 300);
 }
 
 // ── Public hook ───────────────────────────────────────────────────────────────
@@ -554,10 +574,7 @@ export function useFinancialPDFExport(): UseFinancialPDFExportResult {
         enrichRow(tx, tx.project_id ? (projMap.get(tx.project_id) ?? null) : null)
       );
 
-      downloadAsBlob(
-        buildStatementHTML("business", businessName, rows),
-        `${businessName.replace(/\s+/g, "_")}_Business_Tax_Summary.html`,
-      );
+      printDocumentAsPDF(buildStatementHTML("business", businessName, rows));
     } finally {
       setExporting(false);
     }
@@ -588,10 +605,7 @@ export function useFinancialPDFExport(): UseFinancialPDFExportResult {
 
       const rows = txns.map((tx) => enrichRow(tx, proj));
 
-      downloadAsBlob(
-        buildStatementHTML("project", projectName, rows),
-        `${projectName.replace(/\s+/g, "_")}_Financial_Statement.html`,
-      );
+      printDocumentAsPDF(buildStatementHTML("project", projectName, rows));
     } finally {
       setExporting(false);
     }
