@@ -322,7 +322,13 @@ export default function TransactionModal({ onClose, onSaved, initialData }: Prop
                 <select
                   id="tag"
                   value={tag}
-                  onChange={(e) => setTag(e.target.value as FinancialTag)}
+                  onChange={(e) => {
+                    const selected = e.target.value as FinancialTag;
+                    setTag(selected);
+                    // Immediately mirror the type toggle so the UI stays in sync
+                    // with the auto-directional logic applied at submit time.
+                    if (INCOME_TAGS.has(selected)) setType("inflow");
+                  }}
                   className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
                 >
                   {activeBusiness ? (
