@@ -98,7 +98,88 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-// ── HTML document builder ─────────────────────────────────────────────────────
+// ── Naira amount HTML — ₦ rendered at 82% size / one weight step lighter ─────
+// Returns: <span class="cur">₦</span>123,456.00
+function nairaHTML(n: number): string {
+  return `<span class="cur">&#8358;</span>${ngn(n)}`;
+}
+
+// ── Directional amount cell — green + for inflows, red − for outflows ─────────
+function dirAmt(n: number, isInflow: boolean): string {
+  const cls    = isInflow ? "inflow" : "outflow";
+  const prefix = isInflow ? "+" : "&#8722;";
+  return `<span class="${cls}">${prefix}${nairaHTML(n)}</span>`;
+}
+
+// ── Shared dark-theme design tokens ──────────────────────────────────────────
+
+const T = {
+  bg:          "#09090B",
+  card:        "#111112",
+  border:      "#27272A",
+  borderLight: "#1F1F22",
+  text:        "#F4F4F5",
+  muted:       "#A1A1AA",
+  dim:         "#71717A",
+  inflow:      "#10B981",
+  outflow:     "#EF4444",
+  amber:       "#F59E0B",
+  violet:      "#8B5CF6",
+} as const;
+
+// ── Shared CSS block used by both builders ────────────────────────────────────
+
+const DARK_BASE_CSS = `
+  @import url('https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700,800&display=swap');
+
+  @page {
+    size: A4 portrait;
+    margin: 14mm 16mm;
+    background: ${T.bg};
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html {
+    background: ${T.bg};
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body {
+    font-family: 'General Sans', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    background: ${T.bg};
+    color: ${T.text};
+    font-size: 10pt;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @media print {
+    html, body {
+      background: ${T.bg} !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  }
+
+  /* ── Naira symbol ─────────────────────────────────────────────────── */
+  .cur {
+    font-size: 0.82em;
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+
+  /* ── Directional amount colours ───────────────────────────────────── */
+  .inflow  { color: ${T.inflow};  font-weight: 700; }
+  .outflow { color: ${T.outflow}; font-weight: 700; }
+  .amber   { color: ${T.amber};   font-weight: 600; }
+  .violet  { color: ${T.violet};  font-weight: 600; }
+  .muted   { color: ${T.dim}; }
+`;
+
+// ── HTML document builder — Business Tax Summary & Project Statement ───────────
 
 function buildStatementHTML(
   scope:         "business" | "project",
@@ -114,30 +195,39 @@ function buildStatementHTML(
 
   // ── Aggregates ──────────────────────────────────────────────────────────────
   const inflows        = rows.filter((r) => r.is_inflow);
-  const grossRevenue   = inflows.reduce((s, r) => s + r.gross, 0);
+  const outflows       = rows.filter((r) => !r.is_inflow);
+  const grossRevenue   = inflows.reduce((s, r)  => s + r.gross, 0);
   const totalOpex      = rows.filter((r) => r.is_wren).reduce((s, r) => s + r.gross, 0);
   const totalVat       = rows.reduce((s, r) => s + r.vat_amount, 0);
   const totalWht       = rows.reduce((s, r) => s + r.wht_amount, 0);
-  const totalNetCash   = inflows.reduce((s, r) => s + r.net_cash, 0);
+  const totalNetCash   = inflows.reduce((s, r)  => s + r.net_cash, 0);
+  const totalOut       = outflows.reduce((s, r) => s + r.gross, 0);
+  const takeHome       = grossRevenue - totalOut;
 
   // ── Table rows ──────────────────────────────────────────────────────────────
   const TRUNC = 500;
-  const truncated = rows.length > TRUNC;
+  const truncated  = rows.length > TRUNC;
   const displayRows = rows.slice(0, TRUNC);
 
   const tableBody = displayRows.map((r) => {
-    const grossClass  = r.is_inflow  ? "emerald" : "muted";
-    const grossPrefix = r.is_inflow  ? "" : "&#8722;";
-    const netCell     = r.is_inflow  ? `₦${ngn(r.net_cash)}` : "&#8212;";
+    const netCell = r.is_inflow
+      ? `<span class="inflow">${nairaHTML(r.net_cash)}</span>`
+      : `<span class="muted">&#8212;</span>`;
+    const vatCell = r.vat_amount > 0
+      ? `<span class="amber">${nairaHTML(r.vat_amount)}</span>`
+      : `<span class="muted">&#8212;</span>`;
+    const whtCell = r.wht_amount > 0
+      ? `<span class="violet">${nairaHTML(r.wht_amount)}</span>`
+      : `<span class="muted">&#8212;</span>`;
 
     return `<tr>
       <td class="date">${fmtDate(r.date)}</td>
       <td class="desc">${esc(r.description)}</td>
       <td class="proj">${esc(r.project_name)}</td>
       <td class="cat">${esc(r.category)}</td>
-      <td class="r ${grossClass}">${grossPrefix}&#8358;${ngn(r.gross)}</td>
-      <td class="r ${r.vat_amount > 0 ? "amber" : "muted"}">${r.vat_amount > 0 ? `&#8358;${ngn(r.vat_amount)}` : "&#8212;"}</td>
-      <td class="r ${r.wht_amount > 0 ? "violet" : "muted"}">${r.wht_amount > 0 ? `&#8358;${ngn(r.wht_amount)}` : "&#8212;"}</td>
+      <td class="r">${dirAmt(r.gross, r.is_inflow)}</td>
+      <td class="r">${vatCell}</td>
+      <td class="r">${whtCell}</td>
       <td class="r">${netCell}</td>
     </tr>`;
   }).join("\n");
@@ -156,6 +246,8 @@ function buildStatementHTML(
     ? "Aggregates all inflow receipts and deductible expenditures across all active client contracts and overhead cost centres under this business entity."
     : "Isolates all inflow receipts and expenditures recorded against this specific client contract for audit and compliance reporting.";
 
+  const takeHomeColor = takeHome >= 0 ? T.inflow : T.outflow;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -163,66 +255,50 @@ function buildStatementHTML(
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${esc(workspaceName)} — ${docTypeLabel}</title>
   <style>
-    @page {
-      size: A4 portrait;
-      margin: 14mm 16mm;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      color: #0f172a;
-      background: #ffffff;
-      font-size: 10pt;
-      line-height: 1.5;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
+    ${DARK_BASE_CSS}
 
     /* ── Document header ─────────────────────────────────────────────── */
     .doc-header {
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
-      border-bottom: 2.5pt solid #0f172a;
+      border-bottom: 1pt solid ${T.border};
       padding-bottom: 10pt;
       margin-bottom: 16pt;
     }
     .brand {
       font-size: 17pt;
-      font-weight: 900;
+      font-weight: 800;
       letter-spacing: -0.5pt;
-      color: #0f172a;
+      color: ${T.text};
     }
-    .brand em { color: #10b981; font-style: normal; }
+    .brand em { color: ${T.inflow}; font-style: normal; }
     .header-right { text-align: right; }
     .doc-type-label {
       font-size: 7pt;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 1.8pt;
-      color: #10b981;
+      color: ${T.inflow};
     }
     .doc-date {
       font-size: 8pt;
-      color: #64748b;
+      color: ${T.muted};
       margin-top: 2pt;
     }
 
     /* ── Title block ─────────────────────────────────────────────────── */
-    .title-block {
-      margin-bottom: 16pt;
-    }
+    .title-block { margin-bottom: 16pt; }
     .workspace-name {
       font-size: 18pt;
       font-weight: 800;
-      color: #0f172a;
+      color: ${T.text};
       letter-spacing: -0.4pt;
       line-height: 1.2;
     }
     .statement-scope {
       font-size: 8.5pt;
-      color: #64748b;
+      color: ${T.muted};
       margin-top: 4pt;
       line-height: 1.5;
       max-width: 80%;
@@ -234,16 +310,17 @@ function buildStatementHTML(
     }
     .pill {
       display: inline-block;
-      border: 0.75pt solid #e2e8f0;
+      border: 0.75pt solid ${T.border};
       border-radius: 100pt;
       padding: 2pt 8pt;
       font-size: 7pt;
       font-weight: 600;
-      color: #475569;
+      color: ${T.muted};
       text-transform: uppercase;
       letter-spacing: 0.8pt;
+      background: ${T.card};
     }
-    .pill.green { border-color: #bbf7d0; color: #059669; background: #f0fdf4; }
+    .pill.green { border-color: ${T.inflow}; color: ${T.inflow}; background: transparent; }
 
     /* ── Section heading ─────────────────────────────────────────────── */
     .section-heading {
@@ -251,8 +328,8 @@ function buildStatementHTML(
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 1.5pt;
-      color: #64748b;
-      border-bottom: 0.75pt solid #e2e8f0;
+      color: ${T.dim};
+      border-bottom: 0.75pt solid ${T.border};
       padding-bottom: 5pt;
       margin-top: 18pt;
       margin-bottom: 10pt;
@@ -265,17 +342,17 @@ function buildStatementHTML(
       gap: 9pt;
     }
     .kpi {
-      border: 0.75pt solid #e2e8f0;
+      border: 0.75pt solid ${T.border};
       border-radius: 5pt;
       padding: 10pt 11pt 9pt;
-      background: #f8fafc;
+      background: ${T.card};
     }
     .kpi-label {
       font-size: 6.5pt;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 1pt;
-      color: #94a3b8;
+      color: ${T.dim};
       margin-bottom: 5pt;
     }
     .kpi-value {
@@ -283,16 +360,17 @@ function buildStatementHTML(
       font-weight: 800;
       letter-spacing: -0.3pt;
       font-variant-numeric: tabular-nums;
-      color: #0f172a;
+      color: ${T.text};
       line-height: 1.2;
     }
-    .kpi-value.emerald { color: #27EAA6; }
-    .kpi-value.slate   { color: #475569; }
-    .kpi-value.amber   { color: #b45309; }
-    .kpi-value.violet  { color: #6d28d9; }
+    .kpi-value .cur { font-size: 0.82em; font-weight: 500; }
+    .kpi-value.green  { color: ${T.inflow};  }
+    .kpi-value.red    { color: ${T.outflow}; }
+    .kpi-value.amber  { color: ${T.amber};   }
+    .kpi-value.violet { color: ${T.violet};  }
     .kpi-sub {
       font-size: 6.5pt;
-      color: #94a3b8;
+      color: ${T.dim};
       margin-top: 3.5pt;
       line-height: 1.4;
     }
@@ -312,11 +390,11 @@ function buildStatementHTML(
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.9pt;
-      color: #64748b;
-      background: #f8fafc;
-      border-top: 1.5pt solid #0f172a;
-      border-bottom: 0.75pt solid #cbd5e1;
-      padding: 6pt 6pt;
+      color: ${T.dim};
+      background: ${T.card};
+      border-top: 0.75pt solid ${T.border};
+      border-bottom: 0.75pt solid ${T.border};
+      padding: 6pt;
       text-align: left;
       white-space: nowrap;
     }
@@ -324,84 +402,78 @@ function buildStatementHTML(
 
     tbody td {
       font-size: 8.5pt;
-      color: #334155;
+      color: ${T.muted};
       padding: 5pt 6pt;
-      border-bottom: 0.5pt solid #f1f5f9;
+      border-bottom: 0.5pt solid ${T.borderLight};
       vertical-align: top;
     }
     tbody tr:last-child td { border-bottom: none; }
     tbody td.r    { text-align: right; font-variant-numeric: tabular-nums; }
-    tbody td.date { white-space: nowrap; font-size: 8pt; }
-    tbody td.desc { font-size: 8pt; color: #0f172a; }
-    tbody td.proj { font-size: 7.5pt; color: #475569; }
+    tbody td.date { white-space: nowrap; font-size: 8pt; color: ${T.dim}; }
+    tbody td.desc { font-size: 8pt; color: ${T.text}; }
+    tbody td.proj { font-size: 7.5pt; color: ${T.dim}; }
     tbody td.cat  {
       font-size: 6.5pt;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.6pt;
-      color: #64748b;
+      color: ${T.dim};
     }
-    .emerald { color: #27EAA6; font-weight: 700; }
-    .amber   { color: #b45309; font-weight: 600; }
-    .violet  { color: #6d28d9; font-weight: 600; }
-    .muted   { color: #94a3b8; }
 
     /* Total row */
     tfoot td {
-      border-top: 1.5pt solid #0f172a;
+      border-top: 0.75pt solid ${T.border};
       border-bottom: none;
       font-weight: 800;
       font-size: 8.5pt;
-      padding: 6pt 6pt;
+      padding: 6pt;
+      color: ${T.text};
+      background: ${T.card};
     }
     tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
 
     /* Truncation notice */
     .trunc-note {
       font-size: 7.5pt;
-      color: #94a3b8;
+      color: ${T.dim};
       font-style: italic;
       text-align: center;
       padding: 8pt 0 !important;
-      border-top: 0.5pt solid #e2e8f0 !important;
+      border-top: 0.5pt solid ${T.border} !important;
       border-bottom: none !important;
     }
 
     /* ── Compliance note ─────────────────────────────────────────────── */
     .compliance-note {
       margin-top: 14pt;
-      border: 0.75pt solid #e2e8f0;
-      border-left: 2.5pt solid #10b981;
+      border: 0.75pt solid ${T.border};
+      border-left: 2.5pt solid ${T.inflow};
       border-radius: 3pt;
       padding: 8pt 10pt;
       font-size: 7.5pt;
-      color: #475569;
+      color: ${T.muted};
       line-height: 1.6;
-      background: #f8fafc;
+      background: ${T.card};
     }
-    .compliance-note strong { color: #0f172a; }
+    .compliance-note strong { color: ${T.text}; }
 
     /* ── Footer ──────────────────────────────────────────────────────── */
     .doc-footer {
       margin-top: 20pt;
-      border-top: 0.5pt solid #e2e8f0;
+      border-top: 0.5pt solid ${T.border};
       padding-top: 8pt;
       display: flex;
       justify-content: space-between;
       align-items: center;
       font-size: 7pt;
-      color: #94a3b8;
+      color: ${T.dim};
     }
     .doc-footer .brand-sm {
       font-weight: 800;
-      color: #10b981;
+      color: ${T.inflow};
       font-size: 8pt;
     }
-    .doc-footer .brand-sm span { color: #0f172a; }
-
-    @media print {
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    }
+    .doc-footer .brand-sm span { color: ${T.text}; }
   </style>
 </head>
 <body>
@@ -430,25 +502,31 @@ function buildStatementHTML(
   <div class="section-heading">Core Financial Summary</div>
   <div class="kpi-grid">
     <div class="kpi">
-      <div class="kpi-label">Gross Revenue</div>
-      <div class="kpi-value emerald">&#8358;${ngn(grossRevenue)}</div>
+      <div class="kpi-label">Money In</div>
+      <div class="kpi-value green">+${nairaHTML(grossRevenue)}</div>
       <div class="kpi-sub">Total inflow receipts (VAT-inclusive)</div>
     </div>
     <div class="kpi">
-      <div class="kpi-label">Total Deductible OpEx</div>
-      <div class="kpi-value slate">&#8358;${ngn(totalOpex)}</div>
+      <div class="kpi-label">Money Out</div>
+      <div class="kpi-value red">&#8722;${nairaHTML(totalOpex)}</div>
       <div class="kpi-sub">WREN-compliant COGS &amp; operating costs</div>
     </div>
     <div class="kpi">
-      <div class="kpi-label">VAT Liabilities Collected</div>
-      <div class="kpi-value amber">&#8358;${ngn(totalVat)}</div>
+      <div class="kpi-label">VAT Collected</div>
+      <div class="kpi-value amber">${nairaHTML(totalVat)}</div>
       <div class="kpi-sub">Output VAT to remit via FIRS TaxPro-Max</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">WHT Credit Notes</div>
-      <div class="kpi-value violet">&#8358;${ngn(totalWht)}</div>
+      <div class="kpi-value violet">${nairaHTML(totalWht)}</div>
       <div class="kpi-sub">Anticipated TCC offset at FIRS clearance</div>
     </div>
+  </div>
+
+  <!-- Take-Home Profit highlight -->
+  <div style="margin-top:9pt;border:0.75pt solid ${T.border};border-radius:5pt;padding:10pt 11pt;background:${T.card};display:flex;align-items:baseline;justify-content:space-between;">
+    <span style="font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:1pt;color:${T.dim};">Take-Home Profit</span>
+    <span style="font-size:15pt;font-weight:800;letter-spacing:-0.4pt;color:${takeHomeColor};">${takeHome >= 0 ? "+" : "&#8722;"}${nairaHTML(Math.abs(takeHome))}</span>
   </div>
 
   <!-- Transaction ledger -->
@@ -460,10 +538,10 @@ function buildStatementHTML(
         <th style="width:22%">Description</th>
         <th style="width:12%">Project</th>
         <th style="width:7%">Category</th>
-        <th class="r" style="width:13%">Gross Amount</th>
+        <th class="r" style="width:14%">Amount</th>
         <th class="r" style="width:12%">VAT Collected</th>
         <th class="r" style="width:12%">WHT Deducted</th>
-        <th class="r" style="width:13%">Net Cash-at-Hand</th>
+        <th class="r" style="width:12%">Net Cash</th>
       </tr>
     </thead>
     <tbody>
@@ -472,11 +550,11 @@ function buildStatementHTML(
     </tbody>
     <tfoot>
       <tr>
-        <td colspan="4">Totals (inflows)</td>
-        <td class="r emerald">&#8358;${ngn(grossRevenue)}</td>
-        <td class="r amber">&#8358;${ngn(totalVat)}</td>
-        <td class="r violet">&#8358;${ngn(totalWht)}</td>
-        <td class="r">&#8358;${ngn(totalNetCash)}</td>
+        <td colspan="4" style="color:${T.muted};">Totals — inflow rows</td>
+        <td class="r"><span class="inflow">+${nairaHTML(grossRevenue)}</span></td>
+        <td class="r"><span class="amber">${nairaHTML(totalVat)}</span></td>
+        <td class="r"><span class="violet">${nairaHTML(totalWht)}</span></td>
+        <td class="r">${nairaHTML(totalNetCash)}</td>
       </tr>
     </tfoot>
   </table>
@@ -520,9 +598,9 @@ function buildOverviewHTML(d: BusinessOverviewData): string {
     hour: "2-digit", minute: "2-digit", hour12: true,
   });
 
-  const profitColor = d.totals.net >= 0 ? "#27EAA6" : "#f87171";
+  const profitColor = d.totals.net >= 0 ? T.inflow : T.outflow;
   const marginNum   = parseFloat(d.totals.margin);
-  const marginColor = marginNum >= 0 ? "#27EAA6" : "#f87171";
+  const marginColor = marginNum >= 0 ? T.inflow : T.outflow;
 
   const catRows = d.categories
     .slice(0, 6)
@@ -530,16 +608,16 @@ function buildOverviewHTML(d: BusinessOverviewData): string {
       const barWidth = Math.min(parseFloat(c.pct), 100).toFixed(1);
       return `
         <tr>
-          <td style="padding:5pt 0;font-size:8pt;color:#334155;">${esc(c.label)}</td>
-          <td style="padding:5pt 8pt;text-align:right;font-size:8pt;font-weight:700;color:#0f172a;white-space:nowrap;">
-            &#8358;${ngn(c.amount)}
+          <td style="padding:5pt 0;font-size:8pt;color:${T.muted};">${esc(c.label)}</td>
+          <td style="padding:5pt 8pt;text-align:right;font-size:8pt;font-weight:700;color:${T.outflow};white-space:nowrap;">
+            &#8722;<span style="font-size:0.82em;font-weight:400;">&#8358;</span>${ngn(c.amount)}
           </td>
           <td style="padding:5pt 0;width:110pt;">
-            <div style="height:6pt;border-radius:3pt;background:#f1f5f9;overflow:hidden;">
-              <div style="height:100%;width:${barWidth}%;border-radius:3pt;background:#27EAA6;"></div>
+            <div style="height:5pt;border-radius:3pt;background:${T.borderLight};overflow:hidden;">
+              <div style="height:100%;width:${barWidth}%;border-radius:3pt;background:${T.outflow};"></div>
             </div>
           </td>
-          <td style="padding:5pt 0 5pt 8pt;text-align:right;font-size:7pt;color:#64748b;">${c.pct}%</td>
+          <td style="padding:5pt 0 5pt 8pt;text-align:right;font-size:7pt;color:${T.dim};">${c.pct}%</td>
         </tr>`;
     })
     .join("");
@@ -547,113 +625,117 @@ function buildOverviewHTML(d: BusinessOverviewData): string {
   const projectRows = d.projects
     .slice(0, 8)
     .map((p) => {
-      const netColor = p.net_balance >= 0 ? "#27EAA6" : "#f87171";
+      const netColor  = p.net_balance >= 0 ? T.inflow : T.outflow;
+      const netPrefix = p.net_balance >= 0 ? "+" : "&#8722;";
       return `
         <tr>
-          <td style="padding:5pt 0;font-size:8pt;color:#334155;">${esc(p.name)}</td>
-          <td style="padding:5pt 8pt;text-align:right;font-size:8pt;color:#0f172a;white-space:nowrap;">&#8358;${ngn(p.total_inflow)}</td>
-          <td style="padding:5pt 0;text-align:right;font-size:8pt;font-weight:700;color:${netColor};white-space:nowrap;">&#8358;${ngn(p.net_balance)}</td>
-          <td style="padding:5pt 0 5pt 8pt;text-align:right;font-size:7pt;color:#64748b;">${p.tx_count} tx</td>
+          <td style="padding:5pt 0;font-size:8pt;color:${T.text};">${esc(p.name)}</td>
+          <td style="padding:5pt 8pt;text-align:right;font-size:8pt;color:${T.inflow};white-space:nowrap;">
+            +<span style="font-size:0.82em;font-weight:400;">&#8358;</span>${ngn(p.total_inflow)}
+          </td>
+          <td style="padding:5pt 0;text-align:right;font-size:8pt;font-weight:700;color:${netColor};white-space:nowrap;">
+            ${netPrefix}<span style="font-size:0.82em;font-weight:400;">&#8358;</span>${ngn(Math.abs(p.net_balance))}
+          </td>
+          <td style="padding:5pt 0 5pt 8pt;text-align:right;font-size:7pt;color:${T.dim};">${p.tx_count} tx</td>
         </tr>`;
     })
     .join("");
 
+  const thStyle = `text-align:left;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.7pt;color:${T.dim};padding:4pt 0;border-bottom:0.5pt solid ${T.border};`;
+  const thStyleR = thStyle + "text-align:right;";
+
   const projectSection = d.projects.length > 0
     ? `
-      <div style="margin-top:18pt;">
-        <div style="font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:0.9pt;color:#94a3b8;margin-bottom:8pt;">Project Breakdown</div>
+      <div>
+        <div style="font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:0.9pt;color:${T.dim};margin-bottom:8pt;">Project Breakdown</div>
         <table style="width:100%;border-collapse:collapse;">
           <thead>
-            <tr style="border-bottom:1pt solid #e2e8f0;">
-              <th style="text-align:left;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.7pt;color:#64748b;padding:4pt 0;">Project</th>
-              <th style="text-align:right;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.7pt;color:#64748b;padding:4pt 8pt;">Money In</th>
-              <th style="text-align:right;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.7pt;color:#64748b;padding:4pt 0;">Net</th>
-              <th style="text-align:right;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.7pt;color:#64748b;padding:4pt 0 4pt 8pt;">Volume</th>
+            <tr>
+              <th style="${thStyle}">Project</th>
+              <th style="${thStyleR}padding-left:8pt;">Money In</th>
+              <th style="${thStyleR}">Net</th>
+              <th style="${thStyleR}padding-left:8pt;">Volume</th>
             </tr>
           </thead>
           <tbody>${projectRows}</tbody>
         </table>
       </div>`
-    : "";
+    : `
+      <div>
+        <div style="font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:0.9pt;color:${T.dim};margin-bottom:8pt;">Projects</div>
+        <p style="font-size:8pt;color:${T.dim};">No projects recorded.</p>
+      </div>`;
+
+  const spendSection = d.categories.length > 0
+    ? `<table style="width:100%;border-collapse:collapse;">${catRows}</table>`
+    : `<p style="font-size:8pt;color:${T.dim};">No outflow categories recorded.</p>`;
+
+  const kpiCardStyle = `border:0.75pt solid ${T.border};border-radius:6pt;padding:10pt 12pt;background:${T.card};`;
+  const kpiLabel     = `font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:${T.dim};`;
+  const kpiVal       = `font-size:13pt;font-weight:800;margin-top:4pt;line-height:1.1;font-variant-numeric:tabular-nums;`;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <title>${esc(d.workspaceName)} — Business Overview</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    @page { size: A4; margin: 22mm 18mm 18mm; }
-    body {
-      font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
-      background: #fff;
-      color: #0f172a;
-      font-size: 9pt;
-      line-height: 1.5;
-    }
-    @media print {
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    }
+    ${DARK_BASE_CSS}
+    @page { size: A4; margin: 18mm 16mm; background: ${T.bg}; }
   </style>
 </head>
 <body>
 
   <!-- Header bar -->
-  <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:10pt;border-bottom:2pt solid #004D43;margin-bottom:14pt;">
-    <div style="font-size:16pt;font-weight:900;letter-spacing:-0.5pt;color:#004D43;">
-      Cash<span style="color:#27EAA6;">Bot</span>
+  <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:10pt;border-bottom:1pt solid ${T.border};margin-bottom:14pt;">
+    <div style="font-size:16pt;font-weight:800;letter-spacing:-0.5pt;color:${T.text};">
+      Cash<span style="color:${T.inflow};">Bot</span>
     </div>
     <div style="text-align:right;">
-      <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:#64748b;">Business Overview</div>
-      <div style="font-size:7pt;color:#94a3b8;margin-top:2pt;">Generated: ${generatedAt}</div>
+      <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:${T.inflow};">Business Overview</div>
+      <div style="font-size:7pt;color:${T.dim};margin-top:2pt;">Generated: ${generatedAt}</div>
     </div>
   </div>
 
   <!-- Business name -->
   <div style="margin-bottom:16pt;">
-    <div style="font-size:20pt;font-weight:800;letter-spacing:-0.5pt;color:#0f172a;">${esc(d.workspaceName)}</div>
-    <div style="font-size:8pt;color:#64748b;margin-top:3pt;">Performance summary &middot; ${d.weeks} week${d.weeks !== 1 ? "s" : ""} of recorded activity</div>
+    <div style="font-size:20pt;font-weight:800;letter-spacing:-0.5pt;color:${T.text};">${esc(d.workspaceName)}</div>
+    <div style="font-size:8pt;color:${T.muted};margin-top:3pt;">Performance summary &middot; ${d.weeks} week${d.weeks !== 1 ? "s" : ""} of recorded activity</div>
   </div>
 
   <!-- KPI cards -->
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8pt;margin-bottom:18pt;">
-    <div style="border:1pt solid #e2e8f0;border-radius:8pt;padding:10pt 12pt;background:#f8fafc;">
-      <div style="font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:#64748b;">Money In</div>
-      <div style="font-size:13pt;font-weight:800;color:#27EAA6;margin-top:4pt;line-height:1.1;">&#8358;${ngn(d.totals.inflow)}</div>
+    <div style="${kpiCardStyle}">
+      <div style="${kpiLabel}">Money In</div>
+      <div style="${kpiVal}color:${T.inflow};">+<span style="font-size:0.82em;font-weight:400;">&#8358;</span>${ngn(d.totals.inflow)}</div>
     </div>
-    <div style="border:1pt solid #e2e8f0;border-radius:8pt;padding:10pt 12pt;background:#f8fafc;">
-      <div style="font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:#64748b;">Money Out</div>
-      <div style="font-size:13pt;font-weight:800;color:#ef4444;margin-top:4pt;line-height:1.1;">&#8358;${ngn(d.totals.outflow)}</div>
+    <div style="${kpiCardStyle}">
+      <div style="${kpiLabel}">Money Out</div>
+      <div style="${kpiVal}color:${T.outflow};">&#8722;<span style="font-size:0.82em;font-weight:400;">&#8358;</span>${ngn(d.totals.outflow)}</div>
     </div>
-    <div style="border:1pt solid #e2e8f0;border-radius:8pt;padding:10pt 12pt;background:#f8fafc;">
-      <div style="font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:#64748b;">Take-Home Profit</div>
-      <div style="font-size:13pt;font-weight:800;color:${profitColor};margin-top:4pt;line-height:1.1;">&#8358;${ngn(d.totals.net)}</div>
+    <div style="${kpiCardStyle}">
+      <div style="${kpiLabel}">Take-Home Profit</div>
+      <div style="${kpiVal}color:${profitColor};">${d.totals.net >= 0 ? "+" : "&#8722;"}<span style="font-size:0.82em;font-weight:400;">&#8358;</span>${ngn(Math.abs(d.totals.net))}</div>
     </div>
-    <div style="border:1pt solid #e2e8f0;border-radius:8pt;padding:10pt 12pt;background:#f8fafc;">
-      <div style="font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:#64748b;">Profit Margin</div>
-      <div style="font-size:13pt;font-weight:800;color:${marginColor};margin-top:4pt;line-height:1.1;">${d.totals.margin}%</div>
+    <div style="${kpiCardStyle}">
+      <div style="${kpiLabel}">Profit Margin</div>
+      <div style="${kpiVal}color:${marginColor};">${d.totals.margin}%</div>
     </div>
   </div>
 
-  <!-- Two-column: categories + projects -->
+  <!-- Two-column: spending breakdown + project breakdown -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16pt;">
-    <!-- Spending breakdown -->
     <div>
-      <div style="font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:0.9pt;color:#94a3b8;margin-bottom:8pt;">Spending Breakdown</div>
-      ${d.categories.length > 0
-        ? `<table style="width:100%;border-collapse:collapse;">${catRows}</table>`
-        : `<p style="font-size:8pt;color:#94a3b8;">No outflow categories recorded.</p>`}
+      <div style="font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:0.9pt;color:${T.dim};margin-bottom:8pt;">Spending Breakdown</div>
+      ${spendSection}
     </div>
-
-    <!-- Project performance -->
-    <div>
-      ${projectSection || `<div style="font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:0.9pt;color:#94a3b8;margin-bottom:8pt;">Projects</div><p style="font-size:8pt;color:#94a3b8;">No projects recorded.</p>`}
-    </div>
+    ${projectSection}
   </div>
 
   <!-- Footer -->
-  <div style="margin-top:24pt;border-top:0.5pt solid #e2e8f0;padding-top:8pt;display:flex;justify-content:space-between;align-items:center;font-size:7pt;color:#94a3b8;">
+  <div style="margin-top:24pt;border-top:0.5pt solid ${T.border};padding-top:8pt;display:flex;justify-content:space-between;align-items:center;font-size:7pt;color:${T.dim};">
     <div>
-      <span style="font-weight:800;color:#004D43;font-size:8pt;">Cash<span style="color:#27EAA6;">Bot</span></span>
+      <span style="font-weight:800;color:${T.inflow};font-size:8pt;">Cash<span style="color:${T.text};">Bot</span></span>
       &nbsp;&mdash;&nbsp;Automated Financial Intelligence for Nigerian Entrepreneurs
     </div>
     <div>CONFIDENTIAL &middot; NOT FOR DISTRIBUTION</div>
@@ -682,18 +764,19 @@ function printDocumentAsPDF(html: string): void {
   doc.write(html);
   doc.close();
 
-  // 300 ms gives system fonts and layout a full render pass before print fires.
+  // 400 ms gives system fonts (including General Sans from Fontshare) a full
+  // render pass before print fires. Bumped from 300 ms to account for the
+  // external @import font load on first use.
   setTimeout(() => {
     try {
       iframe.contentWindow?.focus();
       iframe.contentWindow?.print();
     } finally {
-      // Remove iframe after the print dialog has had time to open.
       setTimeout(() => {
         if (document.body.contains(iframe)) document.body.removeChild(iframe);
       }, 1000);
     }
-  }, 300);
+  }, 400);
 }
 
 // ── Public hook ───────────────────────────────────────────────────────────────
