@@ -10,7 +10,7 @@ import {
   useTaxSummary,
 } from "@/hooks/useAnalytics";
 import { Amt, NairaSign } from "@/components/Amt";
-import { useFinancialPDFExport } from "@/components/financial-statement-pdf";
+import { useFinancialPDFExport, type BusinessOverviewData } from "@/components/financial-statement-pdf";
 import type { WeeklySummaryRow, ProjectSummaryRow, TaxSummary } from "@/lib/types";
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ function ProjectFilter({ selectedId, onChange, options, loading }: ProjectFilter
           value={selectedId ?? "all"}
           onChange={(e) => onChange(e.target.value === "all" ? null : e.target.value)}
           disabled={loading}
-          className="appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2 pr-8 text-xs font-medium text-neutral-300 outline-none transition hover:border-neutral-600 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50"
+          className="appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2 pr-8 text-xs font-medium text-neutral-300 outline-none transition hover:border-neutral-600 focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon disabled:opacity-50"
         >
           <option value="all">All Projects</option>
           {options.map((p) => (
@@ -104,10 +104,10 @@ interface SummaryCardProps {
 
 function SummaryCard({ label, value, change, positive, sub }: SummaryCardProps) {
   const valueColor =
-    positive === true ? "text-emerald-400" : positive === false ? "text-red-400" : "text-white";
+    positive === true ? "text-chiron-neon" : positive === false ? "text-red-400" : "text-white";
 
   const changeColor =
-    change == null ? "text-zinc-600" : change >= 0 ? "text-emerald-500" : "text-red-500";
+    change == null ? "text-zinc-600" : change >= 0 ? "text-chiron-neon" : "text-red-500";
 
   return (
     <div className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
@@ -365,7 +365,7 @@ const TAG_META: Record<string, { label: string; color: string }> = {
   opex:               { label: "Operating Expenses (OPEX)", color: "bg-blue-900/50 text-blue-400" },
   personal_essential: { label: "Personal Essential",        color: "bg-violet-900/50 text-violet-400" },
   personal_luxury:    { label: "Personal Luxury",           color: "bg-pink-900/50 text-pink-400" },
-  revenue:            { label: "Revenue (Inflows)",         color: "bg-emerald-900/50 text-emerald-400" },
+  revenue:            { label: "Revenue (Inflows)",         color: "bg-chiron-deep-alt/50 text-chiron-neon" },
 };
 
 // ── Tax liability card ────────────────────────────────────────────────────────
@@ -431,7 +431,7 @@ function TaxLiabilityCard({
 
   return (
     <div className={`rounded-2xl border p-6 transition-all ${
-      isOwed ? "border-amber-800/60 bg-amber-950/20" : "border-emerald-800/60 bg-emerald-950/20"
+      isOwed ? "border-amber-800/60 bg-amber-950/20" : "border-chiron-deep/60 bg-chiron-deep/20"
     }`}>
       {/* Header row */}
       <div className="flex items-start justify-between gap-2">
@@ -444,7 +444,7 @@ function TaxLiabilityCard({
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-          isOwed ? "bg-amber-900/60 text-amber-400" : "bg-emerald-900/60 text-emerald-400"
+          isOwed ? "bg-amber-900/60 text-amber-400" : "bg-chiron-deep-alt/60 text-chiron-neon"
         }`}>
           {isOwed ? "ESTIMATE DUE" : "REFUND EST."}
         </span>
@@ -452,7 +452,7 @@ function TaxLiabilityCard({
 
       {/* Main figure */}
       <div className="mt-4">
-        <p className={`text-3xl font-bold leading-none ${isOwed ? "text-amber-400" : "text-emerald-400"}`}>
+        <p className={`text-3xl font-bold leading-none ${isOwed ? "text-amber-400" : "text-chiron-neon"}`}>
           {net_liability < 0 && <span className="font-sans">−</span>}
           <Amt value={fmt(Math.abs(net_liability))} />
         </p>
@@ -494,14 +494,14 @@ function TaxLiabilityCard({
               Input VAT
               <span className="ml-1 text-zinc-700">(expenses <NairaSign />{(taxable_expenses / 1000).toFixed(0)}K gross, {vat_rate}% incl.)</span>
             </span>
-            <span className="font-semibold text-emerald-400">
+            <span className="font-semibold text-chiron-neon">
               −<Amt value={fmt(input_vat)} />
             </span>
           </div>
           <div className="border-t border-zinc-700/60 pt-2">
             <div className="flex items-center justify-between text-xs font-semibold">
               <span className="text-zinc-300">Net Liability</span>
-              <span className={isOwed ? "text-amber-400" : "text-emerald-400"}>
+              <span className={isOwed ? "text-amber-400" : "text-chiron-neon"}>
                 {net_liability < 0 && <span className="font-sans">−</span>}
                 <Amt value={fmt(Math.abs(net_liability))} />
               </span>
@@ -609,7 +609,7 @@ function ProjectBreakdown({
                 key={p.project_id ?? "__unassigned__"}
                 className={`transition ${
                   isSelected
-                    ? "bg-emerald-950/20"
+                    ? "bg-chiron-deep/20"
                     : isUnassigned
                     ? "bg-zinc-800/20"
                     : "hover:bg-zinc-800/40"
@@ -624,7 +624,7 @@ function ProjectBreakdown({
                     )}
                     <span className="truncate">{p.project_name}</span>
                     {isSelected && (
-                      <span className="shrink-0 rounded-full bg-emerald-900/50 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+                      <span className="shrink-0 rounded-full bg-chiron-deep-alt/50 px-2 py-0.5 text-[10px] font-semibold text-chiron-neon">
                         filtered
                       </span>
                     )}
@@ -635,14 +635,14 @@ function ProjectBreakdown({
                     )}
                   </span>
                 </td>
-                <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${isUnassigned ? "text-zinc-400" : "text-emerald-400"}`}>
+                <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${isUnassigned ? "text-zinc-400" : "text-chiron-neon"}`}>
                   <Amt value={fmt(p.total_inflow)} />
                 </td>
                 <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${isUnassigned ? "text-zinc-400" : "text-red-400"}`}>
                   {p.total_outflow > 0 ? <><span className="font-sans">−</span><Amt value={fmt(p.total_outflow)} /></> : "—"}
                 </td>
                 <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${
-                  isUnassigned ? "text-zinc-400" : p.net_balance >= 0 ? "text-emerald-400" : "text-red-400"
+                  isUnassigned ? "text-zinc-400" : p.net_balance >= 0 ? "text-chiron-neon" : "text-red-400"
                 }`}>
                   {p.net_balance < 0 && <span className="font-sans">−</span>}
                   <Amt value={fmt(Math.abs(p.net_balance))} />
@@ -677,7 +677,7 @@ function TaxToggle({
       type="button"
       onClick={() => onChange(!checked)}
       className={`relative ml-4 h-6 w-11 shrink-0 rounded-full transition-colors ${
-        checked ? "bg-emerald-500" : "bg-neutral-700"
+        checked ? "bg-chiron-neon" : "bg-neutral-700"
       }`}
       aria-checked={checked}
       role="switch"
@@ -738,11 +738,12 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
     trackWht: boolean;
     whtRate: "5" | "10";
   } | null>(null);
-  const [taxFormLoading, setTaxFormLoading] = useState(false);
-  const [taxFormSaving,  setTaxFormSaving]  = useState(false);
-  const [taxFormError,   setTaxFormError]   = useState<string | null>(null);
-  const [taxFormSaveOk,  setTaxFormSaveOk]  = useState(false);
-  const [exportOpen,     setExportOpen]     = useState(false);
+  const [taxFormLoading,  setTaxFormLoading]  = useState(false);
+  const [taxFormSaving,   setTaxFormSaving]   = useState(false);
+  const [taxFormError,    setTaxFormError]    = useState<string | null>(null);
+  const [taxFormSaveOk,   setTaxFormSaveOk]   = useState(false);
+  const [exportOpen,      setExportOpen]      = useState(false);
+  const [taxPopoverOpen,  setTaxPopoverOpen]  = useState(false);
 
   const totals = useMemo(() => {
     const inflow  = data.reduce((s, r) => s + r.total_inflow,  0);
@@ -784,7 +785,7 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
   }, [data, totals.outflow]);
 
   useEffect(() => {
-    if (!projectId) { setTaxForm(null); return; }
+    if (!projectId) { setTaxForm(null); setTaxPopoverOpen(false); return; }
     setTaxForm(null);
     setTaxFormLoading(true);
     async function loadTax() {
@@ -833,7 +834,7 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
 
   const workspaceName = activeBusiness?.name ?? "Personal Ledger";
 
-  const { exporting, exportBusinessStatement, exportProjectStatement } =
+  const { exporting, exportBusinessOverview, exportBusinessStatement, exportProjectStatement } =
     useFinancialPDFExport();
 
   if (!activeBusiness) {
@@ -923,7 +924,33 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
                 Export ↓
               </button>
               {exportOpen && (
-                <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+                <div className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+                  <button
+                    onClick={() => {
+                      const od: BusinessOverviewData = {
+                        workspaceName,
+                        weeks:      data.length,
+                        totals,
+                        categories: exportCats,
+                        projects:   projects.map((p) => ({
+                          name:         p.project_name,
+                          net_balance:  p.net_balance,
+                          total_inflow: p.total_inflow,
+                          tx_count:     p.tx_count,
+                        })),
+                      };
+                      exportBusinessOverview(od);
+                      setExportOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-xs font-medium text-chiron-neon transition hover:bg-zinc-800"
+                  >
+                    <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <rect x="3" y="3" width="18" height="18" rx="2" />
+                      <path d="M7 8h10M7 12h7M7 16h4" />
+                    </svg>
+                    Overview PDF
+                  </button>
+                  <div className="mx-4 border-t border-zinc-800" />
                   <button
                     onClick={() => { downloadCSV(data, projects, workspaceName, selectedProjectName ?? null); setExportOpen(false); }}
                     className="flex w-full items-center gap-2.5 px-4 py-2.5 text-xs font-medium text-zinc-300 transition hover:bg-zinc-800"
@@ -945,7 +972,7 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
                       <line x1="16" y1="13" x2="8" y2="13" />
                       <line x1="16" y1="17" x2="8" y2="17" />
                     </svg>
-                    PDF
+                    Analytics PDF
                   </button>
                 </div>
               )}
@@ -956,10 +983,10 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
               onClick={() => exportBusinessStatement(activeBusiness.id, workspaceName)}
               disabled={exporting}
               title="Export an audit-ready A4 tax compliance statement for this business"
-              className="flex items-center gap-1.5 rounded-lg border border-emerald-800/60 bg-emerald-950/30 px-3.5 py-2 text-xs font-semibold text-emerald-300 transition hover:border-emerald-600 hover:bg-emerald-950/50 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg border border-chiron-deep/60 bg-chiron-deep/30 px-3.5 py-2 text-xs font-semibold text-chiron-mint transition hover:border-chiron-neon hover:bg-chiron-deep/50 hover:text-chiron-mint disabled:cursor-not-allowed disabled:opacity-50"
             >
               {exporting ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border border-emerald-600 border-t-emerald-300" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border border-chiron-neon border-t-chiron-mint" />
               ) : (
                 <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -988,6 +1015,138 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
                 Project Statement
               </button>
             )}
+
+            {/* ⋮ Tax & Compliance popover — shown when a project is active */}
+            {projectId && (
+              <div className="relative">
+                {taxPopoverOpen && (
+                  <div className="fixed inset-0 z-40" onClick={() => setTaxPopoverOpen(false)} />
+                )}
+                <button
+                  onClick={() => setTaxPopoverOpen((o) => !o)}
+                  title="Contract Billing & Compliance"
+                  className={`flex h-8 w-8 items-center justify-center rounded-lg border transition ${
+                    taxPopoverOpen
+                      ? "border-chiron-neon bg-chiron-neon/10 text-chiron-neon"
+                      : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-white"
+                  }`}
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="5"  r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="12" cy="19" r="1.5" />
+                  </svg>
+                </button>
+
+                {taxPopoverOpen && (
+                  <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-neutral-800 bg-zinc-900 shadow-2xl">
+                    {/* Popover header */}
+                    <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">
+                          Contract Billing &amp; Compliance
+                        </p>
+                        {selectedProjectName && (
+                          <p className="mt-0.5 text-xs text-neutral-400">{selectedProjectName}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setTaxPopoverOpen(false)}
+                        className="flex h-6 w-6 items-center justify-center rounded-lg text-neutral-500 hover:text-white transition"
+                      >
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    {/* Popover body */}
+                    <div className="space-y-3 p-4">
+                      {taxFormLoading ? (
+                        <div className="flex items-center justify-center py-6">
+                          <span className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-700 border-t-chiron-neon" />
+                        </div>
+                      ) : taxForm ? (
+                        <>
+                          <TaxToggleRow
+                            label="Track 7.5% VAT"
+                            description="Splits output VAT from each inflow for FIRS remittance."
+                            checked={taxForm.trackVat}
+                            onChange={(v) => {
+                              const updated = { ...taxForm, trackVat: v };
+                              setTaxForm(updated);
+                              saveTaxSettings(updated);
+                            }}
+                          />
+                          {taxForm.trackVat && (
+                            <div className="rounded-xl border border-blue-900/50 bg-blue-950/30 px-3 py-2.5 text-xs leading-relaxed text-blue-300">
+                              True revenue = gross ÷ 1.075. VAT appears as output liability in analytics.
+                            </div>
+                          )}
+
+                          <TaxToggleRow
+                            label="Track Withholding Tax (WHT)"
+                            description="Client deducts WHT before paying. Track credit notes."
+                            checked={taxForm.trackWht}
+                            onChange={(v) => {
+                              const updated = { ...taxForm, trackWht: v };
+                              setTaxForm(updated);
+                              saveTaxSettings(updated);
+                            }}
+                          />
+                          {taxForm.trackWht && (
+                            <div className="space-y-1.5">
+                              <label className="block text-xs font-medium text-neutral-400">WHT Rate</label>
+                              <div className="relative">
+                                <select
+                                  value={taxForm.whtRate}
+                                  onChange={(e) => {
+                                    const updated = { ...taxForm, whtRate: e.target.value as "5" | "10" };
+                                    setTaxForm(updated);
+                                    saveTaxSettings(updated);
+                                  }}
+                                  className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2 pr-8 text-xs text-neutral-200 outline-none transition focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon"
+                                >
+                                  {WHT_RATE_OPTIONS.map((o) => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </select>
+                                <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="6 9 12 15 18 9" />
+                                </svg>
+                              </div>
+                            </div>
+                          )}
+
+                          {taxForm.trackVat && taxForm.trackWht && (
+                            <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 px-3 py-2.5 text-xs leading-relaxed text-amber-300">
+                              Both VAT &amp; WHT active — breakdowns appear in your WhatsApp confirmation.
+                            </div>
+                          )}
+
+                          {taxFormError && (
+                            <p className="rounded-xl border border-red-800 bg-red-950/60 px-3 py-2 text-xs text-red-400">
+                              {taxFormError}
+                            </p>
+                          )}
+                          {taxFormSaveOk && (
+                            <p className="rounded-xl border border-chiron-deep bg-chiron-deep/60 px-3 py-2 text-xs text-chiron-neon">
+                              ⚡ Project Tax Profile Synced.
+                            </p>
+                          )}
+                          {taxFormSaving && (
+                            <div className="flex items-center gap-2 text-xs text-neutral-500">
+                              <span className="h-3 w-3 animate-spin rounded-full border border-neutral-600 border-t-chiron-neon" />
+                              Syncing…
+                            </div>
+                          )}
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1004,119 +1163,6 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
           sub={`Across ${data.length} week${data.length !== 1 ? "s" : ""}${selectedProjectName ? ` · ${selectedProjectName}` : ""}`}
         />
       </div>
-
-      {/* Contract Billing & Compliance — inline when project is selected */}
-      {projectId && (
-        <div className="rounded-2xl border border-neutral-800 bg-zinc-900">
-          <div className="flex items-start justify-between border-b border-neutral-800 px-6 py-4">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">
-                Contract Billing &amp; Compliance
-              </p>
-              <p className="mt-0.5 text-xs text-neutral-600">
-                Configure tax rules specifically for this project contract.
-              </p>
-            </div>
-            {selectedProjectName && (
-              <span className="ml-4 mt-0.5 shrink-0 rounded-full bg-zinc-800 px-2.5 py-0.5 text-[11px] font-medium text-zinc-400">
-                {selectedProjectName}
-              </span>
-            )}
-          </div>
-
-          {taxFormLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <span className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-700 border-t-emerald-500" />
-            </div>
-          ) : taxForm ? (
-            <div className="space-y-4 px-6 py-5">
-              <div className="mx-auto max-w-4xl space-y-4">
-                <TaxToggleRow
-                  label="Track 7.5% VAT for this Project Invoice"
-                  description="Splits output VAT from each inflow so you can remit to FIRS via TaxPro-Max."
-                  checked={taxForm.trackVat}
-                  onChange={(v) => {
-                    const updated = { ...taxForm, trackVat: v };
-                    setTaxForm(updated);
-                    saveTaxSettings(updated);
-                  }}
-                />
-                {taxForm.trackVat && (
-                  <div className="rounded-xl border border-blue-900/50 bg-blue-950/30 px-4 py-3 text-xs leading-relaxed text-blue-300">
-                    <span className="font-semibold">How it works: </span>
-                    Each inflow is treated as VAT-inclusive. True revenue = gross ÷ 1.075.
-                    The extracted VAT appears as an output liability on your analytics dashboard.
-                  </div>
-                )}
-
-                <TaxToggleRow
-                  label="Track Withholding Tax (WHT)"
-                  description="Client deducts WHT before paying. Track credit notes for FIRS TCC clearance."
-                  checked={taxForm.trackWht}
-                  onChange={(v) => {
-                    const updated = { ...taxForm, trackWht: v };
-                    setTaxForm(updated);
-                    saveTaxSettings(updated);
-                  }}
-                />
-                {taxForm.trackWht && (
-                  <div className="space-y-2 pl-1">
-                    <label className="block text-xs font-medium text-neutral-400">WHT Rate</label>
-                    <div className="relative">
-                      <select
-                        value={taxForm.whtRate}
-                        onChange={(e) => {
-                          const updated = { ...taxForm, whtRate: e.target.value as "5" | "10" };
-                          setTaxForm(updated);
-                          saveTaxSettings(updated);
-                        }}
-                        className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-                      >
-                        {WHT_RATE_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
-                      <svg
-                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400"
-                        viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
-                      >
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
-                    </div>
-                  </div>
-                )}
-
-                {taxForm.trackVat && taxForm.trackWht && (
-                  <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 px-4 py-3 text-xs leading-relaxed text-amber-300">
-                    <span className="font-semibold">Both VAT &amp; WHT active: </span>
-                    VAT splits true revenue from the tax collected.
-                    WHT is separately withheld by the client before payment.
-                    Both breakdowns appear in your WhatsApp confirmation.
-                  </div>
-                )}
-
-                {taxFormError && (
-                  <p className="rounded-xl border border-red-800 bg-red-950/60 px-4 py-3 text-xs text-red-400">
-                    {taxFormError}
-                  </p>
-                )}
-                {taxFormSaveOk && (
-                  <p className="rounded-xl border border-emerald-800 bg-emerald-950/60 px-4 py-3 text-xs text-emerald-400">
-                    ⚡ Project Tax Profile Synced: Calculations updated.
-                  </p>
-                )}
-                {taxFormSaving && (
-                  <div className="flex items-center gap-2 text-xs text-neutral-500">
-                    <span className="h-3 w-3 animate-spin rounded-full border border-neutral-600 border-t-emerald-500" />
-                    Syncing…
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      )}
 
       {/* Tax liability card */}
       <TaxLiabilityCard
@@ -1138,7 +1184,7 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
       {data.length === 0 && projectId ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 py-12 text-center">
           <p className="text-sm font-medium text-zinc-500">No transactions for this project yet.</p>
-          <button onClick={() => onProjectChange(null, null)} className="mt-3 text-xs text-emerald-500 hover:text-emerald-400 transition">
+          <button onClick={() => onProjectChange(null, null)} className="mt-3 text-xs text-chiron-neon hover:text-chiron-neon transition">
             ← Back to {workspaceName}
           </button>
         </div>
@@ -1160,9 +1206,9 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
                 {data.map((row) => (
                   <tr key={row.week_start} className="hover:bg-zinc-800/40 transition">
                     <td className="whitespace-nowrap px-5 py-4 text-zinc-400">{fmtDate(row.week_start)}</td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-emerald-400"><Amt value={fmt(row.total_inflow)} /></td>
+                    <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-chiron-neon"><Amt value={fmt(row.total_inflow)} /></td>
                     <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-red-400"><span className="font-sans">−</span><Amt value={fmt(row.total_outflow)} /></td>
-                    <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${row.net_balance >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${row.net_balance >= 0 ? "text-chiron-neon" : "text-red-400"}`}>
                       {row.net_balance < 0 && <span className="font-sans">−</span>}<Amt value={fmt(Math.abs(row.net_balance))} />
                     </td>
                   </tr>
@@ -1201,7 +1247,7 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
                         <td className="whitespace-nowrap px-5 py-4 text-right text-sm font-semibold text-zinc-300">{cat.pct}%</td>
                         <td className="px-5 py-4">
                           <div className="h-1.5 w-full min-w-[80px] max-w-[120px] rounded-full bg-zinc-800">
-                            <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${cat.pct}%` }} />
+                            <div className="h-1.5 rounded-full bg-chiron-neon" style={{ width: `${cat.pct}%` }} />
                           </div>
                         </td>
                       </tr>

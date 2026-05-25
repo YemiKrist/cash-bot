@@ -10,6 +10,14 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Chiron Brand System */
+  --color-chiron-neon: #27EAA6;
+  --color-chiron-radiant: #D0FF71;
+  --color-chiron-deep: #004D43;
+  --color-chiron-deep-alt: #183132;
+  --color-chiron-purple: #8F93FF;
+  --color-chiron-mint: #EBFFF5;
 }
 
 @media (prefers-color-scheme: dark) {

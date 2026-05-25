@@ -30,7 +30,7 @@ function Toggle({
       type="button"
       onClick={() => onChange(!checked)}
       className={`relative ml-4 h-6 w-11 shrink-0 rounded-full transition-colors ${
-        checked ? "bg-emerald-500" : "bg-neutral-700"
+        checked ? "bg-chiron-neon" : "bg-neutral-700"
       }`}
       aria-checked={checked}
       role="switch"
@@ -140,7 +140,7 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
   }
 
   const fieldCls =
-    "block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition disabled:opacity-50";
+    "block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition disabled:opacity-50";
 
   return (
     <div
@@ -175,7 +175,7 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
         <div className="overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-16">
-              <span className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-700 border-t-emerald-500" />
+              <span className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-700 border-t-chiron-neon" />
             </div>
           ) : (
             <div className="space-y-6 px-6 py-6">
@@ -276,13 +276,13 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
                 </p>
               )}
               {saveOk && (
-                <p className="rounded-xl border border-emerald-800 bg-emerald-950/60 px-4 py-3 text-xs text-emerald-400">
+                <p className="rounded-xl border border-chiron-deep bg-chiron-deep/60 px-4 py-3 text-xs text-chiron-neon">
                   ⚡ Project Tax Profile Synced: Calculations updated.
                 </p>
               )}
               {saving && (
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
-                  <span className="h-3 w-3 animate-spin rounded-full border border-neutral-600 border-t-emerald-500" />
+                  <span className="h-3 w-3 animate-spin rounded-full border border-neutral-600 border-t-chiron-neon" />
                   Syncing…
                 </div>
               )}

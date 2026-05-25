@@ -65,7 +65,7 @@ function tagLabel(tag: string): string {
 // ── Business avatar helpers ───────────────────────────────────────────────────
 
 const BIZ_PALETTE = [
-  "bg-violet-600", "bg-blue-600", "bg-emerald-600", "bg-amber-500",
+  "bg-violet-600", "bg-blue-600", "bg-chiron-neon", "bg-amber-500",
   "bg-rose-600",   "bg-cyan-600", "bg-orange-500",  "bg-indigo-600",
 ];
 
@@ -83,7 +83,7 @@ function bizColor(name: string): string {
 
 const TAG_COLORS: Record<string, string> = {
   // Business tags
-  revenue:         "bg-emerald-900/50 text-emerald-400",
+  revenue:         "bg-chiron-deep-alt/50 text-chiron-neon",
   cogs:            "bg-amber-900/50 text-amber-400",
   opex:            "bg-blue-900/50 text-blue-400",
   fixed_cost:      "bg-sky-900/50 text-sky-400",
@@ -167,7 +167,7 @@ function MobileNavTab({
         disabled
           ? "cursor-not-allowed opacity-30"
           : active
-          ? "text-emerald-400"
+          ? "text-chiron-neon"
           : "text-zinc-500 active:text-zinc-300"
       }`}
     >
@@ -199,7 +199,7 @@ function MobileSummaryBar({ transactions }: { transactions: Transaction[] }) {
     <div className="flex border-b border-zinc-800">
       <div className="flex flex-1 flex-col items-center border-r border-zinc-800 px-2 py-3">
         <p className="text-[8px] font-bold uppercase tracking-widest text-zinc-500">In</p>
-        <p className="mt-1 text-sm font-bold text-emerald-400">
+        <p className="mt-1 text-sm font-bold text-chiron-neon">
           <Amt value={formatCompact(totalIn)} />
         </p>
       </div>
@@ -378,11 +378,11 @@ function TransactionCard({
     <div className="group flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-3.5 transition-colors active:bg-zinc-800">
       <div
         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-          isInflow ? "bg-emerald-950/80" : "bg-red-950/80"
+          isInflow ? "bg-chiron-deep/80" : "bg-red-950/80"
         }`}
       >
         {isInflow ? (
-          <svg className="h-4 w-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round">
+          <svg className="h-4 w-4 text-chiron-neon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" />
             <polyline points="19 12 12 19 5 12" />
           </svg>
@@ -412,7 +412,7 @@ function TransactionCard({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        <span className={`text-right text-sm font-semibold tabular-nums ${isOutflow ? "text-red-500" : "text-emerald-500"}`}>
+        <span className={`text-right text-sm font-semibold tabular-nums ${isOutflow ? "text-red-500" : "text-chiron-neon"}`}>
           <span className="font-sans">{isOutflow ? "−" : "+"}</span>
           <NairaSign />{formattedAmount}
         </span>
@@ -434,7 +434,7 @@ function WorkspaceHeading({
   const { activeBusiness } = useWorkspace();
   return (
     <div className="min-w-0">
-      <p className="text-xs font-semibold uppercase tracking-widest text-emerald-400">
+      <p className="text-xs font-semibold uppercase tracking-widest text-chiron-neon">
         Active Business/Project
       </p>
       <h1 className="mt-0.5 truncate text-2xl font-bold text-white">
@@ -535,7 +535,7 @@ function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTablePro
                   {tagLabel(tx.financial_tag)}
                 </span>
               </td>
-              <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums ${isOutflow ? "text-red-500" : "text-emerald-500"}`}>
+              <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums ${isOutflow ? "text-red-500" : "text-chiron-neon"}`}>
                 <span className="font-sans">{isOutflow ? "−" : "+"}</span>
                 <NairaSign />{formattedAmount}
               </td>
@@ -688,7 +688,7 @@ function WorkspaceMenu({
                     onClick={() => { setOpen(false); setMode("idle"); setShowProjSettings(true); }}
                     className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-zinc-300 transition hover:bg-zinc-800"
                   >
-                    <svg className="h-3.5 w-3.5 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <svg className="h-3.5 w-3.5 text-chiron-neon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                       <polyline points="14 2 14 8 20 8" />
                       <line x1="16" y1="13" x2="8" y2="13" />
@@ -697,7 +697,7 @@ function WorkspaceMenu({
                     </svg>
                     <span>
                       Contract Billing &amp; Compliance
-                      <span className="ml-1.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-400">
+                      <span className="ml-1.5 rounded-full bg-chiron-neon/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-chiron-neon">
                         VAT · WHT
                       </span>
                     </span>
@@ -755,14 +755,14 @@ function WorkspaceMenu({
                 autoFocus
                 value={input}
                 onChange={(e) => { setInput(e.target.value); setError(null); }}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition"
               />
               {error && <p className="mt-1.5 text-xs text-red-400">{error}</p>}
               <div className="mt-2 flex gap-1.5">
                 <button
                   type="submit"
                   disabled={working || !input.trim()}
-                  className="flex-1 rounded-lg bg-emerald-500 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50 transition"
+                  className="flex-1 rounded-lg bg-chiron-neon py-1.5 text-xs font-semibold text-zinc-950 hover:bg-chiron-neon disabled:opacity-50 transition"
                 >
                   {working ? "Saving…" : "Save"}
                 </button>
@@ -916,7 +916,7 @@ export default function DashboardPage() {
     return (
       <div className="flex h-screen items-center justify-center bg-zinc-950">
         <div className="flex flex-col items-center gap-3">
-          <span className="h-7 w-7 animate-spin rounded-full border-2 border-zinc-700 border-t-emerald-400" />
+          <span className="h-7 w-7 animate-spin rounded-full border-2 border-zinc-700 border-t-chiron-neon" />
           <p className="text-xs text-zinc-500">Loading…</p>
         </div>
       </div>
@@ -1029,7 +1029,7 @@ export default function DashboardPage() {
               </button>
             ) : (
               <span className="text-base font-bold tracking-tight text-white">
-                Cash<span className="text-emerald-400">Bot</span>
+                Cash<span className="text-chiron-neon">Bot</span>
               </span>
             )}
           </div>
@@ -1041,7 +1041,7 @@ export default function DashboardPage() {
               onClick={() => setWorkspaceDropdownOpen((o) => !o)}
               className="flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800/80 px-3 py-1.5 text-xs font-medium text-zinc-300 active:bg-zinc-700 transition"
             >
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-chiron-neon" />
               <span className="max-w-[120px] truncate">
                 {analyticsProjectName ?? activeBusiness?.name ?? "Personal"}
               </span>
@@ -1075,18 +1075,18 @@ export default function DashboardPage() {
                       }}
                       className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition ${
                         activeBusiness === null
-                          ? "bg-emerald-950/60 text-emerald-400"
+                          ? "bg-chiron-deep/60 text-chiron-neon"
                           : "text-zinc-300 hover:bg-zinc-800 active:bg-zinc-700"
                       }`}
                     >
                       <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-600 text-[10px] font-bold text-white ${
-                        activeBusiness === null ? "ring-1 ring-emerald-400 ring-offset-1 ring-offset-zinc-900" : ""
+                        activeBusiness === null ? "ring-1 ring-chiron-neon ring-offset-1 ring-offset-zinc-900" : ""
                       }`}>
                         PL
                       </span>
                       <span className="flex-1 truncate">Personal Ledger</span>
                       {activeBusiness === null && (
-                        <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                        <svg className="h-3.5 w-3.5 shrink-0 text-chiron-neon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       )}
@@ -1102,18 +1102,18 @@ export default function DashboardPage() {
                         }}
                         className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition ${
                           activeBusiness?.id === b.id
-                            ? "bg-emerald-950/60 text-emerald-400"
+                            ? "bg-chiron-deep/60 text-chiron-neon"
                             : "text-zinc-300 hover:bg-zinc-800 active:bg-zinc-700"
                         }`}
                       >
                         <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${bizColor(b.name)} ${
-                          activeBusiness?.id === b.id ? "ring-1 ring-emerald-400 ring-offset-1 ring-offset-zinc-900" : ""
+                          activeBusiness?.id === b.id ? "ring-1 ring-chiron-neon ring-offset-1 ring-offset-zinc-900" : ""
                         }`}>
                           {bizInitials(b.name)}
                         </span>
                         <span className="flex-1 truncate">{b.name}</span>
                         {activeBusiness?.id === b.id && (
-                          <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                          <svg className="h-3.5 w-3.5 shrink-0 text-chiron-neon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
                         )}
@@ -1171,7 +1171,7 @@ export default function DashboardPage() {
               onClick={() => setActiveTab(activeTab === "analytics" ? "transactions" : "analytics")}
               className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition ${
                 activeTab === "analytics"
-                  ? "border-emerald-500 text-emerald-400 hover:border-emerald-400"
+                  ? "border-chiron-neon text-chiron-neon hover:border-chiron-neon"
                   : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-white"
               }`}
               aria-label="Toggle analytics"
@@ -1185,7 +1185,7 @@ export default function DashboardPage() {
             </button>
             <button
               onClick={() => setShowTxModal(true)}
-              className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 transition"
+              className="flex items-center gap-2 rounded-lg bg-chiron-neon px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-chiron-neon transition"
             >
               <span className="text-base leading-none">＋</span>
               Add Transaction
@@ -1220,7 +1220,7 @@ export default function DashboardPage() {
               >
                 {tab === "transactions" ? "Transactions" : "Invoices & A/R"}
                 {activeTab === tab && (
-                  <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-emerald-400" />
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-chiron-neon" />
                 )}
               </button>
             ))}
@@ -1264,7 +1264,7 @@ export default function DashboardPage() {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search transactions by description, tag, or keyword..."
-                      className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 pl-10 pr-10 text-sm text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                      className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 pl-10 pr-10 text-sm text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon"
                     />
                     {searchQuery && (
                       <button
@@ -1290,7 +1290,7 @@ export default function DashboardPage() {
                         onClick={() => applyPreset(preset)}
                         className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                           activePreset === preset
-                            ? "bg-emerald-500 text-zinc-950"
+                            ? "bg-chiron-neon text-zinc-950"
                             : "border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
                         }`}
                       >
@@ -1303,7 +1303,7 @@ export default function DashboardPage() {
                       onClick={() => setActivePreset("custom")}
                       className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                         activePreset === "custom"
-                          ? "bg-emerald-500 text-zinc-950"
+                          ? "bg-chiron-neon text-zinc-950"
                           : "border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
                       }`}
                     >
@@ -1319,7 +1319,7 @@ export default function DashboardPage() {
                             setCustomStart(e.target.value);
                             if (e.target.value) setStartDate(new Date(e.target.value + "T00:00:00"));
                           }}
-                          className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 outline-none transition focus:border-emerald-500 [color-scheme:dark]"
+                          className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 outline-none transition focus:border-chiron-neon [color-scheme:dark]"
                         />
                         <span className="text-xs text-zinc-600">→</span>
                         <input
@@ -1329,7 +1329,7 @@ export default function DashboardPage() {
                             setCustomEnd(e.target.value);
                             if (e.target.value) setEndDate(new Date(e.target.value + "T23:59:59"));
                           }}
-                          className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 outline-none transition focus:border-emerald-500 [color-scheme:dark]"
+                          className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 outline-none transition focus:border-chiron-neon [color-scheme:dark]"
                         />
                       </>
                     )}
@@ -1408,7 +1408,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={fabAction}
-                className="relative -translate-y-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 shadow-xl shadow-emerald-500/30 transition-transform active:scale-95 active:bg-emerald-400"
+                className="relative -translate-y-4 flex h-14 w-14 items-center justify-center rounded-full bg-chiron-neon shadow-xl shadow-chiron-neon/30 transition-transform active:scale-95 active:bg-chiron-neon"
                 aria-label={activeTab === "invoices" && activeBusiness ? "Issue Invoice" : "Add Transaction"}
               >
                 <svg className="h-6 w-6 text-zinc-950" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">

@@ -10,7 +10,7 @@ import { useWorkspace } from "@/providers/WorkspaceProvider";
 // ── Business avatar helpers ──────────────────────────────────────────────────
 
 const BIZ_PALETTE = [
-  "bg-violet-600", "bg-blue-600", "bg-emerald-600", "bg-amber-500",
+  "bg-violet-600", "bg-blue-600", "bg-chiron-neon", "bg-amber-500",
   "bg-rose-600",   "bg-cyan-600", "bg-orange-500",  "bg-indigo-600",
 ];
 
@@ -173,7 +173,7 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
         {/* Wordmark + mobile close */}
         <div className="mb-6 flex items-center justify-between px-2">
           <span className="text-lg font-bold tracking-tight text-white">
-            Cash<span className="text-emerald-400">Bot</span>
+            Cash<span className="text-chiron-neon">Bot</span>
           </span>
           <button
             onClick={onClose}
@@ -199,7 +199,7 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
             }`}
           >
             <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-600 text-[10px] font-bold text-white ${
-              activeBusiness === null ? "ring-1 ring-emerald-400 ring-offset-1 ring-offset-zinc-900" : ""
+              activeBusiness === null ? "ring-1 ring-chiron-neon ring-offset-1 ring-offset-zinc-900" : ""
             }`}>
               PL
             </span>
@@ -217,7 +217,7 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
                 }`}
               >
                 <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${bizColor(b.name)} ${
-                  activeBusiness?.id === b.id && !activeProjectId ? "ring-1 ring-emerald-400 ring-offset-1 ring-offset-zinc-900" : ""
+                  activeBusiness?.id === b.id && !activeProjectId ? "ring-1 ring-chiron-neon ring-offset-1 ring-offset-zinc-900" : ""
                 }`}>
                   {bizInitials(b.name)}
                 </span>
@@ -248,11 +248,11 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
                         value={newProjectName}
                         onChange={(e) => { setNewProjectName(e.target.value); setProjectError(null); }}
                         placeholder="Project name"
-                        className="w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2 text-xs text-neutral-200 placeholder-neutral-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                        className="w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2 text-xs text-neutral-200 placeholder-neutral-500 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition"
                       />
                       {projectError && <p className="mt-1 text-xs text-red-400">{projectError}</p>}
                       <div className="mt-1.5 flex gap-1.5">
-                        <button type="submit" disabled={savingProject || !newProjectName.trim()} className="flex-1 rounded-lg bg-emerald-500 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50 transition">
+                        <button type="submit" disabled={savingProject || !newProjectName.trim()} className="flex-1 rounded-lg bg-chiron-neon py-1.5 text-xs font-semibold text-zinc-950 hover:bg-chiron-neon disabled:opacity-50 transition">
                           {savingProject ? "…" : "Save"}
                         </button>
                         <button type="button" onClick={() => { setAddingProject(false); setNewProjectName(""); setProjectError(null); }} className="flex-1 rounded-lg border border-zinc-700 py-1.5 text-xs text-zinc-400 hover:text-white transition">
@@ -278,7 +278,7 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
                 value={newName}
                 onChange={(e) => { setNewName(e.target.value); setCreateError(null); }}
                 placeholder="Business name"
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition"
               />
               {createError && (
                 <p className="mt-1.5 rounded-lg border border-red-800 bg-red-950/60 px-2.5 py-1.5 text-[11px] leading-snug text-red-400">
@@ -286,7 +286,7 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
                 </p>
               )}
               <div className="mt-1.5 flex gap-1.5">
-                <button type="submit" disabled={saving || !newName.trim()} className="flex-1 rounded-lg bg-emerald-500 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50 transition">
+                <button type="submit" disabled={saving || !newName.trim()} className="flex-1 rounded-lg bg-chiron-neon py-1.5 text-xs font-semibold text-zinc-950 hover:bg-chiron-neon disabled:opacity-50 transition">
                   {saving ? "Saving…" : "Save"}
                 </button>
                 <button type="button" onClick={() => { setAdding(false); setNewName(""); setCreateError(null); }} className="flex-1 rounded-lg border border-zinc-700 py-1.5 text-xs text-zinc-400 hover:text-white transition">

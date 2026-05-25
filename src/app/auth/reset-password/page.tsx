@@ -63,7 +63,7 @@ export default function ResetPasswordPage() {
   }
 
   const field =
-    "block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition";
+    "block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition";
 
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center px-4">
@@ -71,7 +71,7 @@ export default function ResetPasswordPage() {
         {/* Wordmark */}
         <div className="mb-8 text-center">
           <span className="text-2xl font-bold tracking-tight text-white">
-            Cash<span className="text-emerald-400">Bot</span>
+            Cash<span className="text-chiron-neon">Bot</span>
           </span>
           <p className="mt-1 text-sm text-zinc-400">Set a new password.</p>
         </div>
@@ -79,7 +79,7 @@ export default function ResetPasswordPage() {
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-8 shadow-xl">
           {stage === "loading" && (
             <div className="flex flex-col items-center gap-3 py-6">
-              <span className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-emerald-500" />
+              <span className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-chiron-neon" />
               <p className="text-sm text-zinc-500">Verifying reset link…</p>
             </div>
           )}
@@ -100,7 +100,7 @@ export default function ResetPasswordPage() {
 
           {stage === "done" && (
             <div className="space-y-2 text-center py-4">
-              <svg className="mx-auto h-10 w-10 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <svg className="mx-auto h-10 w-10 text-chiron-neon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
               </svg>
               <p className="text-sm font-semibold text-white">Password updated!</p>
@@ -152,7 +152,7 @@ export default function ResetPasswordPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                className="w-full rounded-lg bg-chiron-neon px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-chiron-neon disabled:opacity-50 disabled:cursor-not-allowed transition"
               >
                 {loading ? "Updating…" : "Update Password"}
               </button>
@@ -165,7 +165,7 @@ export default function ResetPasswordPage() {
             <button
               type="button"
               onClick={() => router.replace("/login")}
-              className="font-medium text-emerald-400 hover:text-emerald-300 transition"
+              className="font-medium text-chiron-neon hover:text-chiron-mint transition"
             >
               ← Back to sign in
             </button>

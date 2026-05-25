@@ -41,7 +41,7 @@ interface CardProps {
 function StatCard({ label, value, positive, sub }: CardProps) {
   const valueColor =
     positive === true
-      ? "text-emerald-400"
+      ? "text-chiron-neon"
       : positive === false
       ? "text-red-400"
       : "text-white";

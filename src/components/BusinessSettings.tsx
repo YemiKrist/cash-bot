@@ -27,7 +27,7 @@ function MetricCard({
   accent?: "emerald" | "amber" | "blue" | "violet";
 }) {
   const dotColor =
-    accent === "emerald" ? "bg-emerald-500" :
+    accent === "emerald" ? "bg-chiron-neon" :
     accent === "amber"   ? "bg-amber-400"   :
     accent === "blue"    ? "bg-blue-400"     :
     accent === "violet"  ? "bg-violet-400"   :
@@ -149,7 +149,7 @@ export default function BusinessSettings({ onClose }: Props) {
         <div className="overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-16">
-              <span className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-700 border-t-emerald-500" />
+              <span className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-700 border-t-chiron-neon" />
             </div>
           ) : (
             <div className="space-y-4 px-6 py-6">

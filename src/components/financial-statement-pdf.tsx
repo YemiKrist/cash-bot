@@ -286,7 +286,7 @@ function buildStatementHTML(
       color: #0f172a;
       line-height: 1.2;
     }
-    .kpi-value.emerald { color: #059669; }
+    .kpi-value.emerald { color: #27EAA6; }
     .kpi-value.slate   { color: #475569; }
     .kpi-value.amber   { color: #b45309; }
     .kpi-value.violet  { color: #6d28d9; }
@@ -341,7 +341,7 @@ function buildStatementHTML(
       letter-spacing: 0.6pt;
       color: #64748b;
     }
-    .emerald { color: #059669; font-weight: 700; }
+    .emerald { color: #27EAA6; font-weight: 700; }
     .amber   { color: #b45309; font-weight: 600; }
     .violet  { color: #6d28d9; font-weight: 600; }
     .muted   { color: #94a3b8; }
@@ -503,6 +503,166 @@ function buildStatementHTML(
 </html>`;
 }
 
+// ── Business Overview (one-page summary PDF) ──────────────────────────────────
+
+export interface BusinessOverviewData {
+  workspaceName: string;
+  weeks:      number;
+  totals:     { inflow: number; outflow: number; net: number; margin: string };
+  categories: Array<{ label: string; amount: number; pct: string }>;
+  projects:   Array<{ name: string; net_balance: number; total_inflow: number; tx_count: number }>;
+}
+
+function buildOverviewHTML(d: BusinessOverviewData): string {
+  const now = new Date();
+  const generatedAt = now.toLocaleString("en-NG", {
+    day: "2-digit", month: "long", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: true,
+  });
+
+  const profitColor = d.totals.net >= 0 ? "#27EAA6" : "#f87171";
+  const marginNum   = parseFloat(d.totals.margin);
+  const marginColor = marginNum >= 0 ? "#27EAA6" : "#f87171";
+
+  const catRows = d.categories
+    .slice(0, 6)
+    .map((c) => {
+      const barWidth = Math.min(parseFloat(c.pct), 100).toFixed(1);
+      return `
+        <tr>
+          <td style="padding:5pt 0;font-size:8pt;color:#334155;">${esc(c.label)}</td>
+          <td style="padding:5pt 8pt;text-align:right;font-size:8pt;font-weight:700;color:#0f172a;white-space:nowrap;">
+            &#8358;${ngn(c.amount)}
+          </td>
+          <td style="padding:5pt 0;width:110pt;">
+            <div style="height:6pt;border-radius:3pt;background:#f1f5f9;overflow:hidden;">
+              <div style="height:100%;width:${barWidth}%;border-radius:3pt;background:#27EAA6;"></div>
+            </div>
+          </td>
+          <td style="padding:5pt 0 5pt 8pt;text-align:right;font-size:7pt;color:#64748b;">${c.pct}%</td>
+        </tr>`;
+    })
+    .join("");
+
+  const projectRows = d.projects
+    .slice(0, 8)
+    .map((p) => {
+      const netColor = p.net_balance >= 0 ? "#27EAA6" : "#f87171";
+      return `
+        <tr>
+          <td style="padding:5pt 0;font-size:8pt;color:#334155;">${esc(p.name)}</td>
+          <td style="padding:5pt 8pt;text-align:right;font-size:8pt;color:#0f172a;white-space:nowrap;">&#8358;${ngn(p.total_inflow)}</td>
+          <td style="padding:5pt 0;text-align:right;font-size:8pt;font-weight:700;color:${netColor};white-space:nowrap;">&#8358;${ngn(p.net_balance)}</td>
+          <td style="padding:5pt 0 5pt 8pt;text-align:right;font-size:7pt;color:#64748b;">${p.tx_count} tx</td>
+        </tr>`;
+    })
+    .join("");
+
+  const projectSection = d.projects.length > 0
+    ? `
+      <div style="margin-top:18pt;">
+        <div style="font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:0.9pt;color:#94a3b8;margin-bottom:8pt;">Project Breakdown</div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:1pt solid #e2e8f0;">
+              <th style="text-align:left;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.7pt;color:#64748b;padding:4pt 0;">Project</th>
+              <th style="text-align:right;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.7pt;color:#64748b;padding:4pt 8pt;">Money In</th>
+              <th style="text-align:right;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.7pt;color:#64748b;padding:4pt 0;">Net</th>
+              <th style="text-align:right;font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.7pt;color:#64748b;padding:4pt 0 4pt 8pt;">Volume</th>
+            </tr>
+          </thead>
+          <tbody>${projectRows}</tbody>
+        </table>
+      </div>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    @page { size: A4; margin: 22mm 18mm 18mm; }
+    body {
+      font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+      background: #fff;
+      color: #0f172a;
+      font-size: 9pt;
+      line-height: 1.5;
+    }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header bar -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:10pt;border-bottom:2pt solid #004D43;margin-bottom:14pt;">
+    <div style="font-size:16pt;font-weight:900;letter-spacing:-0.5pt;color:#004D43;">
+      Cash<span style="color:#27EAA6;">Bot</span>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:#64748b;">Business Overview</div>
+      <div style="font-size:7pt;color:#94a3b8;margin-top:2pt;">Generated: ${generatedAt}</div>
+    </div>
+  </div>
+
+  <!-- Business name -->
+  <div style="margin-bottom:16pt;">
+    <div style="font-size:20pt;font-weight:800;letter-spacing:-0.5pt;color:#0f172a;">${esc(d.workspaceName)}</div>
+    <div style="font-size:8pt;color:#64748b;margin-top:3pt;">Performance summary &middot; ${d.weeks} week${d.weeks !== 1 ? "s" : ""} of recorded activity</div>
+  </div>
+
+  <!-- KPI cards -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8pt;margin-bottom:18pt;">
+    <div style="border:1pt solid #e2e8f0;border-radius:8pt;padding:10pt 12pt;background:#f8fafc;">
+      <div style="font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:#64748b;">Money In</div>
+      <div style="font-size:13pt;font-weight:800;color:#27EAA6;margin-top:4pt;line-height:1.1;">&#8358;${ngn(d.totals.inflow)}</div>
+    </div>
+    <div style="border:1pt solid #e2e8f0;border-radius:8pt;padding:10pt 12pt;background:#f8fafc;">
+      <div style="font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:#64748b;">Money Out</div>
+      <div style="font-size:13pt;font-weight:800;color:#ef4444;margin-top:4pt;line-height:1.1;">&#8358;${ngn(d.totals.outflow)}</div>
+    </div>
+    <div style="border:1pt solid #e2e8f0;border-radius:8pt;padding:10pt 12pt;background:#f8fafc;">
+      <div style="font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:#64748b;">Take-Home Profit</div>
+      <div style="font-size:13pt;font-weight:800;color:${profitColor};margin-top:4pt;line-height:1.1;">&#8358;${ngn(d.totals.net)}</div>
+    </div>
+    <div style="border:1pt solid #e2e8f0;border-radius:8pt;padding:10pt 12pt;background:#f8fafc;">
+      <div style="font-size:6.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.8pt;color:#64748b;">Profit Margin</div>
+      <div style="font-size:13pt;font-weight:800;color:${marginColor};margin-top:4pt;line-height:1.1;">${d.totals.margin}%</div>
+    </div>
+  </div>
+
+  <!-- Two-column: categories + projects -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16pt;">
+    <!-- Spending breakdown -->
+    <div>
+      <div style="font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:0.9pt;color:#94a3b8;margin-bottom:8pt;">Spending Breakdown</div>
+      ${d.categories.length > 0
+        ? `<table style="width:100%;border-collapse:collapse;">${catRows}</table>`
+        : `<p style="font-size:8pt;color:#94a3b8;">No outflow categories recorded.</p>`}
+    </div>
+
+    <!-- Project performance -->
+    <div>
+      ${projectSection || `<div style="font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:0.9pt;color:#94a3b8;margin-bottom:8pt;">Projects</div><p style="font-size:8pt;color:#94a3b8;">No projects recorded.</p>`}
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div style="margin-top:24pt;border-top:0.5pt solid #e2e8f0;padding-top:8pt;display:flex;justify-content:space-between;align-items:center;font-size:7pt;color:#94a3b8;">
+    <div>
+      <span style="font-weight:800;color:#004D43;font-size:8pt;">Cash<span style="color:#27EAA6;">Bot</span></span>
+      &nbsp;&mdash;&nbsp;Automated Financial Intelligence for Nigerian Entrepreneurs
+    </div>
+    <div>CONFIDENTIAL &middot; NOT FOR DISTRIBUTION</div>
+  </div>
+
+</body>
+</html>`;
+}
+
 // ── Print via hidden iframe — produces a real PDF in Chrome, Safari & Firefox ─
 // The browser's native print pipeline is used. Chrome shows "Save as PDF" as the
 // default destination; Safari and Firefox have equivalent PDF options. Using an
@@ -540,12 +700,17 @@ function printDocumentAsPDF(html: string): void {
 
 interface UseFinancialPDFExportResult {
   exporting:               boolean;
+  exportBusinessOverview:  (data: BusinessOverviewData) => void;
   exportBusinessStatement: (businessId: string, businessName: string) => Promise<void>;
   exportProjectStatement:  (projectId: string,  projectName: string)  => Promise<void>;
 }
 
 export function useFinancialPDFExport(): UseFinancialPDFExportResult {
   const [exporting, setExporting] = useState(false);
+
+  function exportBusinessOverview(data: BusinessOverviewData): void {
+    printDocumentAsPDF(buildOverviewHTML(data));
+  }
 
   async function exportBusinessStatement(
     businessId:   string,
@@ -611,5 +776,5 @@ export function useFinancialPDFExport(): UseFinancialPDFExportResult {
     }
   }
 
-  return { exporting, exportBusinessStatement, exportProjectStatement };
+  return { exporting, exportBusinessOverview, exportBusinessStatement, exportProjectStatement };
 }

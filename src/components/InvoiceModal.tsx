@@ -148,7 +148,7 @@ export default function InvoiceModal({ onClose, onSaved, initialData }: Props) {
   }
 
   const field =
-    "block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition";
+    "block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition";
 
   return (
     <div
@@ -242,7 +242,7 @@ export default function InvoiceModal({ onClose, onSaved, initialData }: Props) {
                   value={projectId}
                   onChange={(e) => setProjectId(e.target.value)}
                   disabled={projectsLoading}
-                  className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 transition"
+                  className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon disabled:opacity-50 transition"
                 >
                   <option value="">— No project —</option>
                   {projects.map((p) => (
@@ -279,7 +279,7 @@ export default function InvoiceModal({ onClose, onSaved, initialData }: Props) {
                   <select
                     value={status}
                     onChange={(e) => setStatus(e.target.value as InvoiceStatus)}
-                    className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                    className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition"
                   >
                     {(["unpaid", "partially_paid", "paid"] as InvoiceStatus[]).map((s) => (
                       <option key={s} value={s}>{STATUS_LABELS[s]}</option>
@@ -307,7 +307,7 @@ export default function InvoiceModal({ onClose, onSaved, initialData }: Props) {
               <button
                 type="submit"
                 disabled={saving || !activeBusiness}
-                className="flex-1 rounded-lg bg-emerald-500 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                className="flex-1 rounded-lg bg-chiron-neon py-2.5 text-sm font-semibold text-zinc-950 hover:bg-chiron-neon disabled:opacity-50 disabled:cursor-not-allowed transition"
               >
                 {saving ? "Saving…" : isEditing ? "Save Changes" : "Issue Invoice"}
               </button>

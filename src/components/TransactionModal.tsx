@@ -290,7 +290,7 @@ export default function TransactionModal({ onClose, onSaved, initialData, defaul
                     onClick={() => setType(t)}
                     className={`flex-1 rounded-md py-1.5 text-sm font-medium transition ${
                       type === t
-                        ? t === "inflow" ? "bg-emerald-500 text-zinc-950" : "bg-red-500 text-white"
+                        ? t === "inflow" ? "bg-chiron-neon text-zinc-950" : "bg-red-500 text-white"
                         : "text-zinc-400 hover:text-white"
                     }`}
                   >
@@ -312,7 +312,7 @@ export default function TransactionModal({ onClose, onSaved, initialData, defaul
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
-                className="block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                className="block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition"
               />
             </div>
 
@@ -330,7 +330,7 @@ export default function TransactionModal({ onClose, onSaved, initialData, defaul
                     // with the auto-directional logic applied at submit time.
                     if (INCOME_TAGS.has(selected)) setType("inflow");
                   }}
-                  className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                  className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition"
                 >
                   {activeBusiness ? (
                     // Business: single group per direction
@@ -385,7 +385,7 @@ export default function TransactionModal({ onClose, onSaved, initialData, defaul
                     value={projectId}
                     onChange={(e) => setProjectId(e.target.value)}
                     disabled={projectsLoading}
-                    className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 transition"
+                    className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon disabled:opacity-50 transition"
                   >
                     <option value="">— No project —</option>
                     {projects.map((p) => (
@@ -408,7 +408,7 @@ export default function TransactionModal({ onClose, onSaved, initialData, defaul
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional notes…"
-                className="block w-full resize-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                className="block w-full resize-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 placeholder-neutral-500 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition"
               />
             </div>
 
@@ -420,7 +420,7 @@ export default function TransactionModal({ onClose, onSaved, initialData, defaul
                 </label>
                 {receipt ? (
                   <div className="flex items-center gap-3 rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-2.5">
-                    <svg className="h-4 w-4 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <svg className="h-4 w-4 shrink-0 text-chiron-neon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                       <polyline points="14 2 14 8 20 8" />
                     </svg>
@@ -471,7 +471,7 @@ export default function TransactionModal({ onClose, onSaved, initialData, defaul
                 required
                 value={datetime}
                 onChange={(e) => setDatetime(e.target.value)}
-                className="block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition [color-scheme:dark]"
+                className="block w-full rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-sm text-neutral-200 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition [color-scheme:dark]"
               />
             </div>
 
@@ -491,7 +491,7 @@ export default function TransactionModal({ onClose, onSaved, initialData, defaul
               <button
                 type="submit"
                 disabled={phase !== "idle" || !user}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-chiron-neon py-2.5 text-sm font-semibold text-zinc-950 hover:bg-chiron-neon disabled:opacity-50 disabled:cursor-not-allowed transition"
               >
                 {phase === "uploading" && (
                   <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-950/30 border-t-zinc-950" />

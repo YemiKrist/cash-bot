@@ -29,7 +29,7 @@ function daysUntil(iso: string): number {
 }
 
 const STATUS_STYLES: Record<InvoiceStatus, string> = {
-  paid: "bg-emerald-900/50 text-emerald-400 border-emerald-800/50",
+  paid: "bg-chiron-deep-alt/50 text-chiron-neon border-chiron-deep/50",
   partially_paid: "bg-amber-900/50 text-amber-400 border-amber-800/50",
   unpaid: "bg-zinc-800/80 text-zinc-400 border-zinc-700/50",
 };

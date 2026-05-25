@@ -18,7 +18,7 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({
 }));
 
 const selectCls =
-  "w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition";
+  "w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-chiron-neon focus:ring-1 focus:ring-chiron-neon transition";
 
 function ChevronDown() {
   return (
@@ -180,7 +180,7 @@ export default function ReminderSettings({ onClose }: Props) {
         <div className="overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-16">
-              <span className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-700 border-t-emerald-500" />
+              <span className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-700 border-t-chiron-neon" />
             </div>
           ) : (
             <form onSubmit={handleSave} className="space-y-6 px-6 py-6">
@@ -210,7 +210,7 @@ export default function ReminderSettings({ onClose }: Props) {
                   type="button"
                   onClick={() => setEnabled((v) => !v)}
                   className={`relative ml-4 h-6 w-11 shrink-0 rounded-full transition-colors ${
-                    enabled ? "bg-emerald-500" : "bg-neutral-700"
+                    enabled ? "bg-chiron-neon" : "bg-neutral-700"
                   }`}
                   role="switch"
                   aria-checked={enabled}
@@ -280,12 +280,12 @@ export default function ReminderSettings({ onClose }: Props) {
                 </p>
               )}
               {saveOk && (
-                <p className="rounded-xl border border-emerald-800 bg-emerald-950/60 px-4 py-3 text-xs text-emerald-400">
+                <p className="rounded-xl border border-chiron-deep bg-chiron-deep/60 px-4 py-3 text-xs text-chiron-neon">
                   Reminder settings saved successfully.
                 </p>
               )}
               {testOk && (
-                <p className="rounded-xl border border-emerald-800 bg-emerald-950/60 px-4 py-3 text-xs text-emerald-400">
+                <p className="rounded-xl border border-chiron-deep bg-chiron-deep/60 px-4 py-3 text-xs text-chiron-neon">
                   Test reminder requested!
                 </p>
               )}
@@ -312,7 +312,7 @@ export default function ReminderSettings({ onClose }: Props) {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex-1 rounded-xl bg-chiron-neon py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-chiron-neon disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {saving ? "Saving…" : "Save Reminder Settings"}
                 </button>
