@@ -1,7 +1,7 @@
-// ₦ at 0.85em so it never visually overhangs the digits beside it.
+// ₦ at 0.82em / font-normal so the digit mass pops relative to the symbol.
 export function NairaSign({ className }: { className?: string }) {
   return (
-    <span style={{ fontSize: "0.85em", lineHeight: 1 }} className={className}>
+    <span style={{ fontSize: "0.82em", fontWeight: 400, lineHeight: 1 }} className={className}>
       ₦
     </span>
   );

@@ -12,7 +12,7 @@ import InvoiceList from "@/components/InvoiceList";
 import AnalyticsSummary from "@/components/AnalyticsSummary";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 import ProjectSettings from "@/components/ProjectSettings";
-import { Amt } from "@/components/Amt";
+import { Amt, NairaSign } from "@/components/Amt";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/providers/AuthProvider";
 import { useWorkspace } from "@/providers/WorkspaceProvider";
@@ -36,15 +36,12 @@ function formatCompact(n: number): string {
   return `₦${n.toFixed(0)}`;
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString("en-NG", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
+function formatDateParts(iso: string): { date: string; time: string } {
+  const d = new Date(iso);
+  return {
+    date: d.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" }),
+    time: d.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit", hour12: true }),
+  };
 }
 
 function tagLabel(tag: string): string {
@@ -376,6 +373,7 @@ function TransactionCard({
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+  const { date: txDate, time: txTime } = formatDateParts(tx.created_at);
   return (
     <div className="group flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-3.5 transition-colors active:bg-zinc-800">
       <div
@@ -409,13 +407,14 @@ function TransactionCard({
             {tagLabel(tx.financial_tag)}
           </span>
           <span className="text-[10px] text-zinc-600">·</span>
-          <span className="truncate text-[10px] text-zinc-500">{formatDate(tx.created_at)}</span>
+          <span className="truncate text-[10px] text-zinc-500">{txDate}</span>
         </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        <span className={`text-right text-sm font-semibold ${isOutflow ? "text-red-500" : "text-green-500"}`}>
-          {isOutflow ? "-" : ""}₦{formattedAmount}
+        <span className={`text-right text-sm font-semibold tabular-nums ${isOutflow ? "text-red-500" : "text-emerald-500"}`}>
+          <span className="font-sans">{isOutflow ? "−" : "+"}</span>
+          <NairaSign />{formattedAmount}
         </span>
         <TxMenu tx={tx} onEdit={onEdit} onDelete={onDelete} />
       </div>
@@ -494,14 +493,14 @@ function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTablePro
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-zinc-800">
-      <table className="w-full min-w-[640px] text-sm">
+      <table className="w-full min-w-[560px] text-sm">
         <thead>
           <tr className="border-b border-zinc-800 bg-zinc-900/80">
-            {["Date", "Description", "Type", "Tag", "Amount", ""].map((h, i) => (
+            {["Date", "Description", "Tag", "Amount", ""].map((h, i) => (
               <th
                 key={i}
                 className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 ${
-                  i === 4 ? "text-right" : i === 5 ? "w-10" : "text-left"
+                  i === 3 ? "text-right" : i === 4 ? "w-10" : "text-left"
                 }`}
               >
                 {h}
@@ -517,25 +516,15 @@ function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTablePro
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             });
+            const { date: txDate, time: txTime } = formatDateParts(tx.created_at);
             return (
             <tr key={tx.id} className="group transition hover:bg-zinc-800/40">
-              <td className="whitespace-nowrap px-5 py-4 text-zinc-400">{formatDate(tx.created_at)}</td>
+              <td className="whitespace-nowrap px-5 py-4">
+                <p className="text-xs text-zinc-300">{txDate}</p>
+                <p className="mt-0.5 text-[10px] text-zinc-600">{txTime}</p>
+              </td>
               <td className="max-w-[220px] truncate px-5 py-4 text-zinc-200">
                 {tx.description ?? <span className="italic text-zinc-600">—</span>}
-              </td>
-              <td className="px-5 py-4">
-                <span
-                  className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
-                    tx.transaction_type === "inflow" ? "text-emerald-400" : "text-red-400"
-                  }`}
-                >
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      tx.transaction_type === "inflow" ? "bg-emerald-400" : "bg-red-400"
-                    }`}
-                  />
-                  {tx.transaction_type === "inflow" ? "Inflow" : "Outflow"}
-                </span>
               </td>
               <td className="px-5 py-4">
                 <span
@@ -546,8 +535,9 @@ function LedgerTable({ transactions, loading, onEdit, onDelete }: LedgerTablePro
                   {tagLabel(tx.financial_tag)}
                 </span>
               </td>
-              <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${isOutflow ? "text-red-500" : "text-green-500"}`}>
-                <span>{isOutflow ? "-" : ""}₦{formattedAmount}</span>
+              <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums ${isOutflow ? "text-red-500" : "text-emerald-500"}`}>
+                <span className="font-sans">{isOutflow ? "−" : "+"}</span>
+                <NairaSign />{formattedAmount}
               </td>
               <td className="py-4 pl-3 pr-5 text-right">
                 <TxMenu tx={tx} onEdit={onEdit} onDelete={onDelete} tableRow />
@@ -1452,6 +1442,7 @@ export default function DashboardPage() {
           onClose={() => { setShowTxModal(false); setEditingTx(null); }}
           onSaved={fetchTransactions}
           initialData={editingTx ?? undefined}
+          defaultProjectId={analyticsProjectId ?? undefined}
         />
       )}
       {(showInvModal || editingInv) && (

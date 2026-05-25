@@ -107,9 +107,10 @@ interface Props {
   onClose: () => void;
   onSaved: () => void;
   initialData?: Transaction;
+  defaultProjectId?: string;
 }
 
-export default function TransactionModal({ onClose, onSaved, initialData }: Props) {
+export default function TransactionModal({ onClose, onSaved, initialData, defaultProjectId }: Props) {
   const { user } = useAuth();
   const { activeBusiness } = useWorkspace();
 
@@ -126,7 +127,7 @@ export default function TransactionModal({ onClose, onSaved, initialData }: Prop
   const [phase, setPhase] = useState<SavePhase>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  const [projectId, setProjectId] = useState(initialData?.project_id ?? "");
+  const [projectId, setProjectId] = useState(initialData?.project_id ?? defaultProjectId ?? "");
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
 
@@ -373,8 +374,11 @@ export default function TransactionModal({ onClose, onSaved, initialData }: Prop
             {/* Project */}
             {activeBusiness && (
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-zinc-400">
+                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-zinc-400">
                   Project <span className="text-zinc-600">(optional)</span>
+                  {!isEditing && defaultProjectId && projectId === defaultProjectId && (
+                    <span className="text-[10px] font-normal text-zinc-600">(Defaulted to current view)</span>
+                  )}
                 </label>
                 <div className="relative">
                   <select

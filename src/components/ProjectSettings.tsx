@@ -107,10 +107,8 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
+  async function autoSave(vatVal: boolean, whtVal: boolean, rateVal: "5" | "10") {
     setError(null);
-    setSaveOk(false);
     setSaving(true);
 
     const { data: { session } } = await supabase.auth.getSession();
@@ -123,9 +121,9 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
         Authorization:  `Bearer ${token}`,
       },
       body: JSON.stringify({
-        track_vat:        trackVat,
-        track_wht:        trackWht,
-        wht_rate_percent: parseFloat(whtRate),
+        track_vat:        vatVal,
+        track_wht:        whtVal,
+        wht_rate_percent: parseFloat(rateVal),
       }),
     });
 
@@ -133,7 +131,7 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
 
     if (!res.ok) {
       const json = await res.json() as { error?: string };
-      setError(json.error ?? "Save failed.");
+      setError(json.error ?? "Sync failed.");
       return;
     }
 
@@ -180,7 +178,7 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
               <span className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-700 border-t-emerald-500" />
             </div>
           ) : (
-            <form onSubmit={handleSave} className="space-y-6 px-6 py-6">
+            <div className="space-y-6 px-6 py-6">
 
               {/* ── Tax & Compliance ──────────────────────────────────────── */}
               <div className="space-y-3">
@@ -198,7 +196,7 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
                   label="Track 7.5% VAT for this Project Invoice"
                   description="Splits output VAT from each inflow so you can remit to FIRS via TaxPro-Max."
                   checked={trackVat}
-                  onChange={setTrackVat}
+                  onChange={(v) => { setTrackVat(v); autoSave(v, trackWht, whtRate); }}
                 />
 
                 {trackVat && (
@@ -214,7 +212,7 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
                   label="Track Withholding Tax (WHT)"
                   description="Client deducts WHT before paying. Track credit notes for FIRS TCC clearance."
                   checked={trackWht}
-                  onChange={setTrackWht}
+                  onChange={(v) => { setTrackWht(v); autoSave(trackVat, v, whtRate); }}
                 />
 
                 {/* WHT rate dropdown — visible when WHT is on */}
@@ -227,7 +225,11 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
                       <div className="relative">
                         <select
                           value={whtRate}
-                          onChange={(e) => setWhtRate(e.target.value as "5" | "10")}
+                          onChange={(e) => {
+                            const r = e.target.value as "5" | "10";
+                            setWhtRate(r);
+                            autoSave(trackVat, trackWht, r);
+                          }}
                           className={`${fieldCls} appearance-none pr-10`}
                         >
                           {WHT_RATE_OPTIONS.map((o) => (
@@ -267,7 +269,7 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
                 </div>
               </div>
 
-              {/* Errors / success */}
+              {/* Sync status */}
               {error && (
                 <p className="rounded-xl border border-red-800 bg-red-950/60 px-4 py-3 text-xs text-red-400">
                   {error}
@@ -275,28 +277,27 @@ export default function ProjectSettings({ projectId, projectName, onClose }: Pro
               )}
               {saveOk && (
                 <p className="rounded-xl border border-emerald-800 bg-emerald-950/60 px-4 py-3 text-xs text-emerald-400">
-                  Settings saved successfully.
+                  ⚡ Project Tax Profile Synced: Calculations updated.
                 </p>
               )}
+              {saving && (
+                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                  <span className="h-3 w-3 animate-spin rounded-full border border-neutral-600 border-t-emerald-500" />
+                  Syncing…
+                </div>
+              )}
 
-              {/* Actions */}
-              <div className="flex gap-2 pb-2">
+              {/* Close */}
+              <div className="pb-2">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 rounded-xl border border-neutral-700 py-2.5 text-sm text-neutral-400 transition hover:text-white"
+                  className="w-full rounded-xl border border-neutral-700 py-2.5 text-sm text-neutral-400 transition hover:text-white"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {saving ? "Saving…" : "Save Settings"}
+                  Close
                 </button>
               </div>
-            </form>
+            </div>
           )}
         </div>
       </div>

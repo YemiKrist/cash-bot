@@ -75,10 +75,10 @@ function BusinessSummary({ transactions }: { transactions: Transaction[] }) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
       <StatCard
-        label="Revenue"
+        label="Money In"
         value={formatCurrency(revenue)}
         positive={revenue > 0}
-        sub="Total inflows"
+        sub="All earnings received"
       />
       <StatCard
         label="Gross Profit"
@@ -87,15 +87,15 @@ function BusinessSummary({ transactions }: { transactions: Transaction[] }) {
         sub="Revenue − COGS"
       />
       <StatCard
-        label="Net Profit"
+        label="Take-Home Profit"
         value={formatCurrency(netProfit)}
         positive={netProfit >= 0}
         sub="Gross profit − OPEX"
       />
       <StatCard
-        label="Operational Outflows"
+        label="Running Costs"
         value={formatCurrency(operationalOutflows)}
-        sub="Total outflows (all tags)"
+        sub="All business expenses"
       />
     </div>
   );
@@ -166,27 +166,27 @@ function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
       {/* KPI row */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         <StatCard
-          label="Total Inflows"
+          label="Money In"
           value={formatCurrency(totalIn)}
           positive={totalIn > 0}
           sub="All income received"
         />
         <StatCard
-          label="Total Outflows"
+          label="Money Out"
           value={formatCurrency(totalOut)}
           sub="All expenses paid"
         />
         <StatCard
-          label="Net Cash Flow"
+          label="Take-Home Profit"
           value={formatCurrency(net)}
           positive={net >= 0}
-          sub="Inflows − Outflows"
+          sub="Money In − Money Out"
         />
         <StatCard
           label="Savings Rate"
           value={`${savingsRate.toFixed(1)}%`}
           positive={savingsRate >= 0}
-          sub="(Inflows − Outflows) ÷ Inflows"
+          sub="(In − Out) ÷ In"
         />
       </div>
 

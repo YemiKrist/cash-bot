@@ -261,7 +261,7 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
                       </div>
                     </form>
                   ) : (
-                    <button onClick={() => setAddingProject(true)} className="mt-0.5 flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-xs text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300 transition">
+                    <button onClick={() => setAddingProject(true)} className="mt-0.5 flex w-full items-center gap-2 rounded-md border border-transparent px-1.5 py-1.5 text-xs text-zinc-500 transition hover:border-dashed hover:border-zinc-600 hover:text-zinc-300">
                       <span className="leading-none">＋</span>
                       Add Project
                     </button>
@@ -295,7 +295,7 @@ export default function Sidebar({ open, onClose, onProjectClick, onSettingsClick
               </div>
             </form>
           ) : (
-            <button onClick={() => setAdding(true)} className="mt-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300 transition">
+            <button onClick={() => setAdding(true)} className="mt-1 flex w-full items-center gap-2 rounded-lg border border-transparent px-2.5 py-2 text-sm text-zinc-500 transition hover:border-dashed hover:border-zinc-600 hover:text-zinc-300">
               <span className="text-base leading-none">＋</span>
               Add Business
             </button>
