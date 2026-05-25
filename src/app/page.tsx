@@ -185,11 +185,13 @@ function MobileNavTab({
 // ── Mobile compact summary strip ──────────────────────────────────────────────
 
 function MobileSummaryBar({ transactions }: { transactions: Transaction[] }) {
+  // Mirror the same investment-exclusion logic used by PersonalSummary / BusinessSummary
+  // so the mobile strip always shows identical figures to the desktop KPI cards.
   const totalIn = transactions
-    .filter((t) => t.transaction_type === "inflow")
+    .filter((t) => t.transaction_type === "inflow" && t.financial_tag !== "investment")
     .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   const totalOut = transactions
-    .filter((t) => t.transaction_type === "outflow")
+    .filter((t) => t.transaction_type === "outflow" && t.financial_tag !== "investment")
     .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   const net = totalIn - totalOut;
 
