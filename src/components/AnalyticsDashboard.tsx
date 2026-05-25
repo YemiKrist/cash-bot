@@ -141,12 +141,14 @@ function downloadCSV(
 
   const scope = activeProjectName ? ` — ${activeProjectName}` : "";
   sections.push(`WEEKLY PERFORMANCE${scope}`);
-  sections.push(["Week Start", "Inflow (NGN)", "Outflow (NGN)", "Net Balance (NGN)"].join(","));
-  rows.forEach((r) =>
+  sections.push(["Week Start", "Money In (NGN)", "Money Out (NGN)", "Take-Home Profit (NGN)"].join(","));
+  rows.forEach((r) => {
+    const opInflow  = r.revenue;
+    const opOutflow = r.cogs + r.opex + r.personal_essential + r.personal_luxury;
     sections.push(
-      [r.week_start, r.total_inflow.toFixed(2), r.total_outflow.toFixed(2), r.net_balance.toFixed(2)].join(","),
-    ),
-  );
+      [r.week_start, opInflow.toFixed(2), opOutflow.toFixed(2), (opInflow - opOutflow).toFixed(2)].join(","),
+    );
+  });
 
   if (!activeProjectName && projects.length > 0) {
     sections.push("");
@@ -222,13 +224,18 @@ function exportPDF(
   const periodStart = rows.length ? fmtDate(rows[rows.length - 1].week_start) : "—";
   const periodEnd   = rows.length ? fmtDate(rows[0].week_start) : "—";
 
-  const weekRows = rows.map((r) => `
+  const weekRows = rows.map((r) => {
+    const opIn  = r.revenue;
+    const opOut = r.cogs + r.opex + r.personal_essential + r.personal_luxury;
+    const opNet = opIn - opOut;
+    return `
     <tr>
       <td>${fmtDate(r.week_start)}</td>
-      <td class="num green">₦${r.total_inflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
-      <td class="num red">₦${r.total_outflow.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
-      <td class="num ${r.net_balance >= 0 ? "green" : "red"}">₦${r.net_balance.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
-    </tr>`).join("");
+      <td class="num green">₦${opIn.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+      <td class="num red">₦${opOut.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+      <td class="num ${opNet >= 0 ? "green" : "red"}">₦${opNet.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td>
+    </tr>`;
+  }).join("");
 
   const catRows = categories.map((c) => `
     <tr>
@@ -342,7 +349,7 @@ function exportPDF(
     <div class="section-title">Weekly Breakdown</div>
     <table>
       <thead><tr>
-        <th>Week Starting</th><th style="text-align:right">Inflow</th><th style="text-align:right">Outflow</th><th style="text-align:right">Net Balance</th>
+        <th>Week Starting</th><th style="text-align:right">Money In</th><th style="text-align:right">Money Out</th><th style="text-align:right">Take-Home Profit</th>
       </tr></thead>
       <tbody>${weekRows}</tbody>
     </table>
@@ -745,9 +752,19 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
   const [exportOpen,      setExportOpen]      = useState(false);
   const [taxPopoverOpen,  setTaxPopoverOpen]  = useState(false);
 
+  // Operational cash flows — strips investment/savings rows that the RPC
+  // folds into total_inflow / total_outflow but not into the named tag columns.
+  // revenue       = inflow tagged "revenue"  (excludes investment liquidations)
+  // cogs+opex+... = outflow tagged categories (excludes investment deposits)
+  const opRow = (r: WeeklySummaryRow) => {
+    const inflow  = r.revenue;
+    const outflow = r.cogs + r.opex + r.personal_essential + r.personal_luxury;
+    return { inflow, outflow, net: inflow - outflow };
+  };
+
   const totals = useMemo(() => {
-    const inflow  = data.reduce((s, r) => s + r.total_inflow,  0);
-    const outflow = data.reduce((s, r) => s + r.total_outflow, 0);
+    const inflow  = data.reduce((s, r) => s + opRow(r).inflow,  0);
+    const outflow = data.reduce((s, r) => s + opRow(r).outflow, 0);
     const net     = inflow - outflow;
     const margin  = inflow === 0 ? "0.0" : ((net / inflow) * 100).toFixed(1);
     return { inflow, outflow, net, margin };
@@ -755,11 +772,11 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
 
   const changes = useMemo(() => {
     if (data.length < 2) return { inflow: null, outflow: null, net: null };
-    const [cur, prev] = [data[0], data[1]];
+    const [cur, prev] = [opRow(data[0]), opRow(data[1])];
     return {
-      inflow:  pctChange(cur.total_inflow,  prev.total_inflow),
-      outflow: pctChange(cur.total_outflow, prev.total_outflow),
-      net:     pctChange(cur.net_balance,   prev.net_balance),
+      inflow:  pctChange(cur.inflow,  prev.inflow),
+      outflow: pctChange(cur.outflow, prev.outflow),
+      net:     pctChange(cur.net,     prev.net),
     };
   }, [data]);
 
@@ -1195,7 +1212,7 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
             <table className="w-full min-w-[480px] text-sm">
               <thead>
                 <tr className="border-b border-zinc-800 bg-zinc-900/80">
-                  {["Week Starting", "Inflow", "Outflow", "Net Balance"].map((h) => (
+                  {["Week Starting", "Money In", "Money Out", "Take-Home Profit"].map((h) => (
                     <th key={h} className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 ${h === "Week Starting" ? "text-left" : "text-right"}`}>
                       {h}
                     </th>
@@ -1203,16 +1220,19 @@ export default function AnalyticsDashboard({ projectId, onProjectChange, onSetti
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 bg-zinc-900">
-                {data.map((row) => (
-                  <tr key={row.week_start} className="hover:bg-zinc-800/40 transition">
-                    <td className="whitespace-nowrap px-5 py-4 text-zinc-400">{fmtDate(row.week_start)}</td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-chiron-neon"><Amt value={fmt(row.total_inflow)} /></td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-red-400"><span className="font-sans">−</span><Amt value={fmt(row.total_outflow)} /></td>
-                    <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${row.net_balance >= 0 ? "text-chiron-neon" : "text-red-400"}`}>
-                      {row.net_balance < 0 && <span className="font-sans">−</span>}<Amt value={fmt(Math.abs(row.net_balance))} />
-                    </td>
-                  </tr>
-                ))}
+                {data.map((row) => {
+                  const op = opRow(row);
+                  return (
+                    <tr key={row.week_start} className="hover:bg-zinc-800/40 transition">
+                      <td className="whitespace-nowrap px-5 py-4 text-zinc-400">{fmtDate(row.week_start)}</td>
+                      <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-chiron-neon"><Amt value={fmt(op.inflow)} /></td>
+                      <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-red-400"><span className="font-sans">−</span><Amt value={fmt(op.outflow)} /></td>
+                      <td className={`whitespace-nowrap px-5 py-4 text-right font-semibold ${op.net >= 0 ? "text-chiron-neon" : "text-red-400"}`}>
+                        {op.net < 0 && <span className="font-sans">−</span>}<Amt value={fmt(Math.abs(op.net))} />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

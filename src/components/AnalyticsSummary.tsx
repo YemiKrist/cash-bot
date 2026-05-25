@@ -14,6 +14,9 @@ function formatCurrency(n: number): string {
   }).format(n);
 }
 
+// Internal asset movements that must never pollute operational KPIs.
+const ASSET_TRANSFER_TAGS = new Set(["investment", "savings"]);
+
 function sumWhere(
   txs: Transaction[],
   type: Transaction["transaction_type"],
@@ -63,10 +66,23 @@ function StatCard({ label, value, positive, sub }: CardProps) {
 
 function BusinessSummary({ transactions }: { transactions: Transaction[] }) {
   const { revenue, grossProfit, netProfit, operationalOutflows } = useMemo(() => {
-    const revenue = sumWhere(transactions, "inflow");
+    // Money In: external income only — investment/savings inflows (liquidations) excluded.
+    const revenue = transactions.reduce((acc, tx) => {
+      if (tx.transaction_type !== "inflow") return acc;
+      if (ASSET_TRANSFER_TAGS.has(tx.financial_tag)) return acc;
+      return acc + Math.abs(Number(tx.amount));
+    }, 0);
+
     const cogs = sumWhere(transactions, "outflow", "cogs");
     const opex = sumWhere(transactions, "outflow", "opex");
-    const operationalOutflows = sumWhere(transactions, "outflow");
+
+    // Money Out: operational expenses only — investment deposits/savings excluded.
+    const operationalOutflows = transactions.reduce((acc, tx) => {
+      if (tx.transaction_type !== "outflow") return acc;
+      if (ASSET_TRANSFER_TAGS.has(tx.financial_tag)) return acc;
+      return acc + Math.abs(Number(tx.amount));
+    }, 0);
+
     const grossProfit = revenue - cogs;
     const netProfit = grossProfit - opex;
     return { revenue, grossProfit, netProfit, operationalOutflows };
@@ -117,26 +133,34 @@ const PERSONAL_CATEGORIES = [
 
 // Tags that are always income regardless of stored transaction_type.
 const INCOME_TAGS = new Set(["salary_income", "gifts_received"]);
-// Tags excluded from operational outflow totals.
-const EXCLUDE_FROM_OUT = new Set(["salary_income", "gifts_received", "investment"]);
 
 function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
   const { totalIn, totalOut, net, savingsRate, categoryTotals } = useMemo(() => {
-    // Inflows: type=inflow OR an income tag (guards against stale type values).
+    // Money In: true external income — excludes investment liquidations and savings withdrawals.
     const totalIn = transactions.reduce((acc, tx) => {
+      if (ASSET_TRANSFER_TAGS.has(tx.financial_tag)) return acc;
       if (tx.transaction_type !== "inflow" && !INCOME_TAGS.has(tx.financial_tag)) return acc;
       return acc + Math.abs(Number(tx.amount));
     }, 0);
 
-    // Outflows: type=outflow AND not an income/investment tag.
+    // Money Out: true operational expenses — excludes investment deposits and savings transfers.
     const totalOut = transactions.reduce((acc, tx) => {
       if (tx.transaction_type !== "outflow") return acc;
-      if (EXCLUDE_FROM_OUT.has(tx.financial_tag)) return acc;
+      if (ASSET_TRANSFER_TAGS.has(tx.financial_tag)) return acc;
+      if (INCOME_TAGS.has(tx.financial_tag)) return acc;
       return acc + Math.abs(Number(tx.amount));
     }, 0);
 
-    const net         = totalIn - totalOut;
-    const savingsRate = totalIn === 0 ? 0 : (net / totalIn) * 100;
+    const net = totalIn - totalOut;
+
+    // Savings Rate: net asset generation (deposits − liquidations) ÷ true income.
+    const totalSaved = transactions
+      .filter((tx) => ASSET_TRANSFER_TAGS.has(tx.financial_tag))
+      .reduce((sum, tx) => {
+        const absAmt = Math.abs(Number(tx.amount));
+        return tx.transaction_type === "outflow" ? sum + absAmt : sum - absAmt;
+      }, 0);
+    const savingsRate = totalIn > 0 ? (Math.max(0, totalSaved) / totalIn) * 100 : 0;
 
     const categoryTotals = PERSONAL_CATEGORIES.map((c) => {
       if (c.tag !== "investment") {
@@ -186,7 +210,7 @@ function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
           label="Savings Rate"
           value={`${savingsRate.toFixed(1)}%`}
           positive={savingsRate >= 0}
-          sub="(In − Out) ÷ In"
+          sub="Net saved ÷ Income"
         />
       </div>
 
