@@ -184,14 +184,17 @@ function MobileNavTab({
 
 // ── Mobile compact summary strip ──────────────────────────────────────────────
 
+const MOBILE_INCOME_TAGS = new Set(["salary_income", "gifts_received"]);
+const MOBILE_EXCLUDE_FROM_OUT = new Set(["salary_income", "gifts_received", "investment"]);
+
 function MobileSummaryBar({ transactions }: { transactions: Transaction[] }) {
-  // Mirror the same investment-exclusion logic used by PersonalSummary / BusinessSummary
-  // so the mobile strip always shows identical figures to the desktop KPI cards.
+  // Mirrors PersonalSummary logic exactly: income tags always count as inflow;
+  // investment + income tags are excluded from operational outflow totals.
   const totalIn = transactions
-    .filter((t) => t.transaction_type === "inflow" && t.financial_tag !== "investment")
+    .filter((t) => t.transaction_type === "inflow" || MOBILE_INCOME_TAGS.has(t.financial_tag))
     .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   const totalOut = transactions
-    .filter((t) => t.transaction_type === "outflow" && t.financial_tag !== "investment")
+    .filter((t) => t.transaction_type === "outflow" && !MOBILE_EXCLUDE_FROM_OUT.has(t.financial_tag))
     .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   const net = totalIn - totalOut;
 

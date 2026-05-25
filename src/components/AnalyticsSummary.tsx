@@ -115,11 +115,26 @@ const PERSONAL_CATEGORIES = [
 
 // ── Personal cards ────────────────────────────────────────────────────────────
 
+// Tags that are always income regardless of stored transaction_type.
+const INCOME_TAGS = new Set(["salary_income", "gifts_received"]);
+// Tags excluded from operational outflow totals.
+const EXCLUDE_FROM_OUT = new Set(["salary_income", "gifts_received", "investment"]);
+
 function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
   const { totalIn, totalOut, net, savingsRate, categoryTotals } = useMemo(() => {
-    // Exclude investment transfers so KPIs reflect true operational cash flow.
-    const totalIn     = sumWhere(transactions, "inflow",  undefined, "investment");
-    const totalOut    = sumWhere(transactions, "outflow", undefined, "investment");
+    // Inflows: type=inflow OR an income tag (guards against stale type values).
+    const totalIn = transactions.reduce((acc, tx) => {
+      if (tx.transaction_type !== "inflow" && !INCOME_TAGS.has(tx.financial_tag)) return acc;
+      return acc + Math.abs(Number(tx.amount));
+    }, 0);
+
+    // Outflows: type=outflow AND not an income/investment tag.
+    const totalOut = transactions.reduce((acc, tx) => {
+      if (tx.transaction_type !== "outflow") return acc;
+      if (EXCLUDE_FROM_OUT.has(tx.financial_tag)) return acc;
+      return acc + Math.abs(Number(tx.amount));
+    }, 0);
+
     const net         = totalIn - totalOut;
     const savingsRate = totalIn === 0 ? 0 : (net / totalIn) * 100;
 

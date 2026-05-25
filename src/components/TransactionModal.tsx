@@ -24,10 +24,19 @@ type FinancialTag =
   | "personal_luxury"
   | "clothing"
   | "investment"
-  | "family_gifting";
+  | "family_gifting"
+  | "salary_income"
+  | "gifts_received";
+
+// Tags that always force transaction_type → "inflow".
+const INCOME_TAGS: ReadonlySet<FinancialTag> = new Set(["salary_income", "gifts_received", "revenue"]);
 
 function tagsFor(type: TransactionType, hasBusiness: boolean): FinancialTag[] {
-  if (type === "inflow") return ["revenue"];
+  if (type === "inflow") {
+    return hasBusiness
+      ? ["revenue"]
+      : ["salary_income", "gifts_received"];
+  }
   return hasBusiness
     ? ["cogs", "opex", "fixed_cost", "capex"]
     : ["food_groceries", "transport", "bills_utilities", "personal_luxury", "clothing", "investment", "family_gifting"];
@@ -47,6 +56,8 @@ function tagLabel(tag: FinancialTag): string {
     clothing:        "Clothing & Apparel",
     investment:      "Savings & Investments",
     family_gifting:  "Family & Gifting",
+    salary_income:   "Salary & Contract Income",
+    gifts_received:  "Gift Money Received",
   };
   return map[tag];
 }
@@ -177,10 +188,15 @@ export default function TransactionModal({ onClose, onSaved, initialData }: Prop
 
     setPhase("saving");
 
+    // Auto-directional enforcement: income tags always resolve to inflow;
+    // expense tags always resolve to outflow regardless of the toggle state.
+    const resolvedType: TransactionType = INCOME_TAGS.has(tag) ? "inflow" : "outflow";
+    const resolvedAmount = Math.abs(parsed);
+
     if (isEditing) {
       const payload: Record<string, unknown> = {
-        amount: parsed,
-        transaction_type: type,
+        amount: resolvedAmount,
+        transaction_type: resolvedType,
         financial_tag: tag,
         description: description.trim() || null,
         project_id: projectId || null,
@@ -199,8 +215,8 @@ export default function TransactionModal({ onClose, onSaved, initialData }: Prop
       const { error: dbError } = await supabase.from("transactions").insert({
         user_id: user.id,
         business_id: activeBusiness?.id ?? null,
-        amount: parsed,
-        transaction_type: type,
+        amount: resolvedAmount,
+        transaction_type: resolvedType,
         financial_tag: tag,
         description: description.trim() || null,
         media_storage_url: mediaStorageUrl,
@@ -307,9 +323,38 @@ export default function TransactionModal({ onClose, onSaved, initialData }: Prop
                   onChange={(e) => setTag(e.target.value as FinancialTag)}
                   className="block w-full appearance-none rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 pr-10 text-sm text-neutral-200 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
                 >
-                  {tagsFor(type, activeBusiness !== null).map((t) => (
-                    <option key={t} value={t}>{tagLabel(t)}</option>
-                  ))}
+                  {activeBusiness ? (
+                    // Business: single group per direction
+                    <optgroup label={type === "inflow" ? "💰 Income" : "💸 Expenses"}>
+                      {tagsFor(type, true).map((t) => (
+                        <option key={t} value={t}>{tagLabel(t)}</option>
+                      ))}
+                    </optgroup>
+                  ) : type === "inflow" ? (
+                    <optgroup label="💰 Income">
+                      {tagsFor("inflow", false).map((t) => (
+                        <option key={t} value={t}>{tagLabel(t)}</option>
+                      ))}
+                    </optgroup>
+                  ) : (
+                    <>
+                      <optgroup label="🍔 Living Expenses">
+                        {(["food_groceries", "transport", "bills_utilities"] as FinancialTag[]).map((t) => (
+                          <option key={t} value={t}>{tagLabel(t)}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="✨ Lifestyle">
+                        {(["personal_luxury", "clothing"] as FinancialTag[]).map((t) => (
+                          <option key={t} value={t}>{tagLabel(t)}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="💚 Giving & Saving">
+                        {(["family_gifting", "investment"] as FinancialTag[]).map((t) => (
+                          <option key={t} value={t}>{tagLabel(t)}</option>
+                        ))}
+                      </optgroup>
+                    </>
+                  )}
                 </select>
                 <svg className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="6 9 12 15 18 9" />
