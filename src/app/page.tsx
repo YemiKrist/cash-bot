@@ -664,7 +664,7 @@ function WorkspaceMenu({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+        <div className="absolute right-0 top-full z-[60] mt-2 w-64 overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl">
           {mode === "idle" && (
             <div className="p-1.5">
               {activeProjectId && (
