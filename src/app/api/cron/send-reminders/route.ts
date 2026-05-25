@@ -76,8 +76,12 @@ const MORNING_MSG = [
   "",
   "Any expenses or income from today that haven't been logged yet?",
   "",
-  "Just reply with the details and I'll record them instantly.",
-  'Example: "Received 150k from Acme Corp for Favsys"',
+  "⚡ Quick-Log Formula (Runs Instantly):",
+  "👉 [Amount], [Description], [Business/Ledger Name]",
+  "• 150k, Acme Corp payment, Favsys",
+  "• 45k, salary received, personal",
+  "",
+  "Just reply with the comma breakdown or type a normal message, and CashBot will handle the rest!",
 ].join("\n");
 
 const EVENING_MSG = [
@@ -85,8 +89,12 @@ const EVENING_MSG = [
   "",
   "Any expenses or income from today still to be logged?",
   "",
-  "Reply with the details and I'll take care of it.",
-  'Example: "Spent 8k on diesel for the generator — Favsys"',
+  "⚡ Quick-Log Formula (Runs Instantly):",
+  "👉 [Amount], [Description], [Business/Ledger Name]",
+  "• 8k, diesel for generator, Favsys",
+  "• 200k, Naijasolve website, personal",
+  "",
+  "Just reply with the comma breakdown or type a normal message, and CashBot will handle the rest!",
 ].join("\n");
 
 // ── GET /api/cron/send-reminders ──────────────────────────────────────────────
