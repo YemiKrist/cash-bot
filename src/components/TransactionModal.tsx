@@ -117,7 +117,7 @@ export default function TransactionModal({ onClose, onSaved, initialData }: Prop
 
   const [amount, setAmount] = useState(initialData ? String(initialData.amount) : "");
   const [type, setType] = useState<TransactionType>(initialData?.transaction_type ?? "inflow");
-  const [tag, setTag] = useState<FinancialTag>((initialData?.financial_tag as FinancialTag) ?? "revenue");
+  const [tag, setTag] = useState<FinancialTag>((initialData?.financial_tag as FinancialTag) ?? "salary_income");
   const [description, setDescription] = useState(initialData?.description ?? "");
   const [datetime, setDatetime] = useState(() =>
     initialData ? isoToLocalInput(initialData.created_at) : localDatetimeNow(),
@@ -152,8 +152,10 @@ export default function TransactionModal({ onClose, onSaved, initialData }: Prop
 
   useEffect(() => {
     const valid = tagsFor(type, activeBusiness !== null);
-    if (!valid.includes(tag)) setTag(valid[0]);
-  }, [type, activeBusiness, tag]);
+    // Use functional update so we read the latest tag without adding it to deps,
+    // avoiding a double-render loop when the tag itself changes.
+    setTag((prev) => valid.includes(prev) ? prev : valid[0]);
+  }, [type, activeBusiness]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
