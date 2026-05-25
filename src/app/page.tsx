@@ -187,10 +187,10 @@ function MobileNavTab({
 function MobileSummaryBar({ transactions }: { transactions: Transaction[] }) {
   const totalIn = transactions
     .filter((t) => t.transaction_type === "inflow")
-    .reduce((s, t) => s + t.amount, 0);
+    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   const totalOut = transactions
     .filter((t) => t.transaction_type === "outflow")
-    .reduce((s, t) => s + t.amount, 0);
+    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   const net = totalIn - totalOut;
 
   return (
