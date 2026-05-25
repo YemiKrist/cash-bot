@@ -17,6 +17,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/providers/AuthProvider";
 import { useWorkspace } from "@/providers/WorkspaceProvider";
 import type { Transaction, Invoice } from "@/lib/types";
+import { useLedgerMetrics } from "@/hooks/useLedgerMetrics";
 
 type Tab = "transactions" | "invoices" | "analytics";
 
@@ -30,10 +31,14 @@ function formatCurrency(n: number): string {
   }).format(n);
 }
 
-function formatCompact(n: number): string {
-  if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `₦${(n / 1_000).toFixed(0)}K`;
-  return `₦${n.toFixed(0)}`;
+function formatMobile(n: number): string {
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    notation: "compact",
+    compactDisplay: "short",
+    maximumSignificantDigits: 3,
+  }).format(n);
 }
 
 function formatDateParts(iso: string): { date: string; time: string } {
@@ -181,39 +186,28 @@ function MobileNavTab({
 
 // ── Mobile compact summary strip ──────────────────────────────────────────────
 
-const MOBILE_INCOME_TAGS = new Set(["salary_income", "gifts_received"]);
-const MOBILE_EXCLUDE_FROM_OUT = new Set(["salary_income", "gifts_received", "investment"]);
-
 function MobileSummaryBar({ transactions }: { transactions: Transaction[] }) {
-  // Mirrors PersonalSummary logic exactly: income tags always count as inflow;
-  // investment + income tags are excluded from operational outflow totals.
-  const totalIn = transactions
-    .filter((t) => t.transaction_type === "inflow" || MOBILE_INCOME_TAGS.has(t.financial_tag))
-    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-  const totalOut = transactions
-    .filter((t) => t.transaction_type === "outflow" && !MOBILE_EXCLUDE_FROM_OUT.has(t.financial_tag))
-    .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
-  const net = totalIn - totalOut;
+  const { trueIncome, trueExpenses, netProfit } = useLedgerMetrics(transactions);
 
   return (
     <div className="flex border-b border-zinc-800">
       <div className="flex flex-1 flex-col items-center border-r border-zinc-800 px-2 py-3">
         <p className="text-[8px] font-bold uppercase tracking-widest text-zinc-500">In</p>
         <p className="mt-1 text-sm font-bold text-chiron-neon">
-          <Amt value={formatCompact(totalIn)} />
+          <Amt value={formatMobile(trueIncome)} />
         </p>
       </div>
       <div className="flex flex-1 flex-col items-center border-r border-zinc-800 px-2 py-3">
         <p className="text-[8px] font-bold uppercase tracking-widest text-zinc-500">Out</p>
         <p className="mt-1 text-sm font-bold text-red-400">
-          <Amt value={formatCompact(totalOut)} />
+          <Amt value={formatMobile(trueExpenses)} />
         </p>
       </div>
       <div className="flex flex-1 flex-col items-center px-2 py-3">
         <p className="text-[8px] font-bold uppercase tracking-widest text-zinc-500">Net</p>
-        <p className={`mt-1 text-sm font-bold ${net >= 0 ? "text-white" : "text-red-400"}`}>
-          {net < 0 && <span className="font-sans text-xs">−</span>}
-          <Amt value={formatCompact(Math.abs(net))} />
+        <p className={`mt-1 text-sm font-bold ${netProfit >= 0 ? "text-white" : "text-red-400"}`}>
+          {netProfit < 0 && <span className="font-sans text-xs">−</span>}
+          <Amt value={formatMobile(Math.abs(netProfit))} />
         </p>
       </div>
     </div>

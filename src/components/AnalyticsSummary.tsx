@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
 import { useWorkspace } from "@/providers/WorkspaceProvider";
+import { useLedgerMetrics } from "@/hooks/useLedgerMetrics";
 import type { Transaction } from "@/lib/types";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -12,23 +12,6 @@ function formatCurrency(n: number): string {
     currency: "NGN",
     minimumFractionDigits: 2,
   }).format(n);
-}
-
-// Internal asset movements that must never pollute operational KPIs.
-const ASSET_TRANSFER_TAGS = new Set(["investment", "savings"]);
-
-function sumWhere(
-  txs: Transaction[],
-  type: Transaction["transaction_type"],
-  tag?: string,
-  excludeTag?: string,
-): number {
-  return txs.reduce((acc, tx) => {
-    if (tx.transaction_type !== type) return acc;
-    if (tag && tx.financial_tag !== tag) return acc;
-    if (excludeTag && tx.financial_tag === excludeTag) return acc;
-    return acc + Math.abs(Number(tx.amount));
-  }, 0);
 }
 
 // ── Stat card ────────────────────────────────────────────────────────────────
@@ -62,31 +45,22 @@ function StatCard({ label, value, positive, sub }: CardProps) {
   );
 }
 
+// ── Personal category config ──────────────────────────────────────────────────
+
+const PERSONAL_CATEGORIES = [
+  { tag: "food_groceries",  label: "Food & Groceries",   accent: "text-orange-400", bar: "bg-orange-400", badge: "bg-orange-900/40 text-orange-400" },
+  { tag: "transport",       label: "Transport",           accent: "text-cyan-400",   bar: "bg-cyan-400",   badge: "bg-cyan-900/40 text-cyan-400"   },
+  { tag: "bills_utilities", label: "Bills & Utilities",   accent: "text-violet-400", bar: "bg-violet-400", badge: "bg-violet-900/40 text-violet-400" },
+  { tag: "personal_luxury", label: "Luxury / Lifestyle",  accent: "text-pink-400",   bar: "bg-pink-400",   badge: "bg-pink-900/40 text-pink-400"   },
+  { tag: "clothing",        label: "Clothing",            accent: "text-rose-400",   bar: "bg-rose-400",   badge: "bg-rose-900/40 text-rose-400"   },
+  { tag: "investment",      label: "Savings",             accent: "text-teal-400",   bar: "bg-teal-400",   badge: "bg-teal-900/40 text-teal-400"   },
+  { tag: "family_gifting",  label: "Family & Gifting",    accent: "text-purple-400", bar: "bg-purple-400", badge: "bg-purple-900/40 text-purple-400" },
+] as const;
+
 // ── Business cards ────────────────────────────────────────────────────────────
 
 function BusinessSummary({ transactions }: { transactions: Transaction[] }) {
-  const { revenue, grossProfit, netProfit, operationalOutflows } = useMemo(() => {
-    // Money In: external income only — investment/savings inflows (liquidations) excluded.
-    const revenue = transactions.reduce((acc, tx) => {
-      if (tx.transaction_type !== "inflow") return acc;
-      if (ASSET_TRANSFER_TAGS.has(tx.financial_tag)) return acc;
-      return acc + Math.abs(Number(tx.amount));
-    }, 0);
-
-    const cogs = sumWhere(transactions, "outflow", "cogs");
-    const opex = sumWhere(transactions, "outflow", "opex");
-
-    // Money Out: operational expenses only — investment deposits/savings excluded.
-    const operationalOutflows = transactions.reduce((acc, tx) => {
-      if (tx.transaction_type !== "outflow") return acc;
-      if (ASSET_TRANSFER_TAGS.has(tx.financial_tag)) return acc;
-      return acc + Math.abs(Number(tx.amount));
-    }, 0);
-
-    const grossProfit = revenue - cogs;
-    const netProfit = grossProfit - opex;
-    return { revenue, grossProfit, netProfit, operationalOutflows };
-  }, [transactions]);
+  const { revenue, grossProfit, netProfit, operationalOutflows } = useLedgerMetrics(transactions);
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
@@ -117,71 +91,16 @@ function BusinessSummary({ transactions }: { transactions: Transaction[] }) {
   );
 }
 
-// ── Personal category config ──────────────────────────────────────────────────
-
-const PERSONAL_CATEGORIES = [
-  { tag: "food_groceries",  label: "Food & Groceries",   accent: "text-orange-400", bar: "bg-orange-400", badge: "bg-orange-900/40 text-orange-400" },
-  { tag: "transport",       label: "Transport",           accent: "text-cyan-400",   bar: "bg-cyan-400",   badge: "bg-cyan-900/40 text-cyan-400"   },
-  { tag: "bills_utilities", label: "Bills & Utilities",   accent: "text-violet-400", bar: "bg-violet-400", badge: "bg-violet-900/40 text-violet-400" },
-  { tag: "personal_luxury", label: "Luxury / Lifestyle",  accent: "text-pink-400",   bar: "bg-pink-400",   badge: "bg-pink-900/40 text-pink-400"   },
-  { tag: "clothing",        label: "Clothing",            accent: "text-rose-400",   bar: "bg-rose-400",   badge: "bg-rose-900/40 text-rose-400"   },
-  { tag: "investment",      label: "Savings",             accent: "text-teal-400",   bar: "bg-teal-400",   badge: "bg-teal-900/40 text-teal-400"   },
-  { tag: "family_gifting",  label: "Family & Gifting",    accent: "text-purple-400", bar: "bg-purple-400", badge: "bg-purple-900/40 text-purple-400" },
-] as const;
-
 // ── Personal cards ────────────────────────────────────────────────────────────
 
-// Tags that are always income regardless of stored transaction_type.
-const INCOME_TAGS = new Set(["salary_income", "gifts_received"]);
-
 function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
-  const { totalIn, totalOut, net, savingsRate, categoryTotals } = useMemo(() => {
-    // Money In: true external income — excludes investment liquidations and savings withdrawals.
-    const totalIn = transactions.reduce((acc, tx) => {
-      if (ASSET_TRANSFER_TAGS.has(tx.financial_tag)) return acc;
-      if (tx.transaction_type !== "inflow" && !INCOME_TAGS.has(tx.financial_tag)) return acc;
-      return acc + Math.abs(Number(tx.amount));
-    }, 0);
-
-    // Money Out: true operational expenses — excludes investment deposits and savings transfers.
-    const totalOut = transactions.reduce((acc, tx) => {
-      if (tx.transaction_type !== "outflow") return acc;
-      if (ASSET_TRANSFER_TAGS.has(tx.financial_tag)) return acc;
-      if (INCOME_TAGS.has(tx.financial_tag)) return acc;
-      return acc + Math.abs(Number(tx.amount));
-    }, 0);
-
-    const net = totalIn - totalOut;
-
-    // Savings Rate: net asset generation (deposits − liquidations) ÷ true income.
-    const totalSaved = transactions
-      .filter((tx) => ASSET_TRANSFER_TAGS.has(tx.financial_tag))
-      .reduce((sum, tx) => {
-        const absAmt = Math.abs(Number(tx.amount));
-        return tx.transaction_type === "outflow" ? sum + absAmt : sum - absAmt;
-      }, 0);
-    const savingsRate = totalIn > 0 ? (Math.max(0, totalSaved) / totalIn) * 100 : 0;
-
-    const categoryTotals = PERSONAL_CATEGORIES.map((c) => {
-      if (c.tag !== "investment") {
-        // Standard categories: absolute outflow sum only.
-        return { ...c, amount: sumWhere(transactions, "outflow", c.tag) };
-      }
-
-      // Investment: net tracking — deposits add, liquidations subtract.
-      // Inflows (payouts/withdrawals) reduce the displayed net allocation.
-      const netInvestment = transactions.reduce((acc, tx) => {
-        if (tx.financial_tag !== "investment") return acc;
-        const absAmt = Math.abs(Number(tx.amount));
-        const isLiquidation = tx.transaction_type === "inflow" || Number(tx.amount) > 0;
-        return isLiquidation ? acc - absAmt : acc + absAmt;
-      }, 0);
-
-      return { ...c, amount: Math.max(0, netInvestment) };
-    });
-
-    return { totalIn, totalOut, net, savingsRate, categoryTotals };
-  }, [transactions]);
+  const {
+    trueIncome,
+    trueExpenses,
+    netProfit,
+    trueSavingsRate,
+    categoryTotals,
+  } = useLedgerMetrics(transactions);
 
   const maxCategoryAmount = Math.max(...categoryTotals.map((c) => c.amount), 1);
 
@@ -191,25 +110,25 @@ function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         <StatCard
           label="Money In"
-          value={formatCurrency(totalIn)}
-          positive={totalIn > 0}
+          value={formatCurrency(trueIncome)}
+          positive={trueIncome > 0}
           sub="All income received"
         />
         <StatCard
           label="Money Out"
-          value={formatCurrency(totalOut)}
+          value={formatCurrency(trueExpenses)}
           sub="All expenses paid"
         />
         <StatCard
           label="Take-Home Profit"
-          value={formatCurrency(net)}
-          positive={net >= 0}
+          value={formatCurrency(netProfit)}
+          positive={netProfit >= 0}
           sub="Money In − Money Out"
         />
         <StatCard
           label="Savings Rate"
-          value={`${savingsRate.toFixed(1)}%`}
-          positive={savingsRate >= 0}
+          value={`${trueSavingsRate.toFixed(1)}%`}
+          positive={trueSavingsRate >= 0}
           sub="Net saved ÷ Income"
         />
       </div>
@@ -220,9 +139,11 @@ function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
           Spending Breakdown
         </p>
         <div className="space-y-2.5">
-          {categoryTotals.map((cat) => {
-            const pct = totalOut === 0 ? 0 : (cat.amount / totalOut) * 100;
-            const barWidth = totalOut === 0 ? 0 : (cat.amount / maxCategoryAmount) * 100;
+          {PERSONAL_CATEGORIES.map((cat) => {
+            const catData = categoryTotals.find((c) => c.tag === cat.tag);
+            const amount = catData?.amount ?? 0;
+            const pct = trueExpenses === 0 ? 0 : (amount / trueExpenses) * 100;
+            const barWidth = trueExpenses === 0 ? 0 : (amount / maxCategoryAmount) * 100;
             return (
               <div key={cat.tag} className="flex items-center gap-3">
                 <span className={`w-[118px] shrink-0 text-[11px] font-medium ${cat.accent}`}>
@@ -235,7 +156,7 @@ function PersonalSummary({ transactions }: { transactions: Transaction[] }) {
                   />
                 </div>
                 <span className="w-[88px] shrink-0 text-right text-[11px] text-zinc-400">
-                  {formatCurrency(cat.amount)}
+                  {formatCurrency(amount)}
                 </span>
                 <span className={`w-9 shrink-0 rounded-full px-1 py-0.5 text-center text-[9px] font-bold ${cat.badge}`}>
                   {pct.toFixed(0)}%
