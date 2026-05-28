@@ -133,7 +133,9 @@ type FinancialTag =
   | "personal_luxury"
   | "clothing"
   | "investment"
-  | "family_gifting";
+  | "family_gifting"
+  | "salary_income"
+  | "gifts_received";
 
 interface ParsedTransaction {
   amount: number;
@@ -960,7 +962,7 @@ exactly these fields:
 
   amount                 number         Monetary value in NGN (strip ₦ symbols and commas)
   transaction_type       string         "inflow" or "outflow"
-  financial_tag          string         One of: "revenue" | "cogs" | "opex" | "fixed_cost" | "capex" | "food_groceries" | "transport" | "bills_utilities" | "personal_luxury" | "clothing" | "investment" | "family_gifting"
+  financial_tag          string         One of: "revenue" | "cogs" | "opex" | "fixed_cost" | "capex" | "food_groceries" | "transport" | "bills_utilities" | "personal_luxury" | "clothing" | "investment" | "family_gifting" | "salary_income" | "gifts_received"
   description            string         One clean sentence summarising the transaction
   entity_prefix_guess    string|null    The exact business name mentioned, or null if none stated
   project_name           string|null    The exact project, client engagement, or deliverable name
@@ -1027,6 +1029,8 @@ Tag selection rules (Nigerian SME context):
                       "withdrew my savings". Set transaction_type to "inflow" and amount to the positive
                       value received. Do NOT mark these as is_corporate_ambiguous.
   family_gifting  → gifts, family support, remittances, celebrations (weddings, birthdays), charity, church offerings. Always outflow.
+  salary_income   → regular employment income, monthly salary, wages, freelance pay cheque, pension. Always inflow.
+  gifts_received  → cash gifts, money from family, financial transfers received as gifts, windfalls. Always inflow.
 
 IMPORTANT: When is_corporate_ambiguous is true, still populate amount, transaction_type,
 financial_tag, and description with your best guess — these will be used if the user
@@ -1051,7 +1055,8 @@ then return a strict JSON object with exactly these fields:
   suggested_tag          string         One of: "revenue" | "cogs" | "opex" | "fixed_cost" |
                                         "capex" | "food_groceries" | "transport" |
                                         "bills_utilities" | "personal_luxury" | "clothing" |
-                                        "investment" | "family_gifting"
+                                        "investment" | "family_gifting" |
+                                        "salary_income" | "gifts_received"
   merchant               string         The business/vendor name printed on the receipt (e.g.
                                         "Shoprite", "Total Energies", "Chicken Republic"). Use
                                         "Unknown Merchant" if not legible.
@@ -1438,7 +1443,7 @@ async function runPipeline(
   // (commas sitting directly between two digits, e.g. "1,700") are stripped
   // globally so they never collide with the protocol comma delimiter.
   // "1,700, fuel, Favice" → "1700, fuel, Favice" → splits cleanly into 3 parts.
-  // Single-digit menu replies (1-7) are intercepted before this block and are
+  // Single-digit menu replies (1-9) are intercepted before this block and are
   // unaffected. Natural-language fallback (Gemini) still receives rawText.
   if (!shortcutParsed && !mediaUrl) {
     const trimmedText   = rawText.trim();
@@ -1510,7 +1515,7 @@ async function runPipeline(
           shortcutParsed = {
             amount,
             transaction_type:      "outflow",
-            financial_tag:         "opex",
+            financial_tag:         overrideBusinessId !== null ? "opex" : "food_groceries",
             description,
             entity_prefix_guess:   null,
             project_name:          t2ProjectName,
@@ -2023,8 +2028,10 @@ const PERSONAL_TAXONOMY: Record<string, TaxonomyEntry> = {
   "3": { tag: "bills_utilities", label: "Bills & Utilities",           transaction_type: "outflow", emoji: "3️⃣" },
   "4": { tag: "personal_luxury", label: "Personal Luxury / Lifestyle", transaction_type: "outflow", emoji: "4️⃣" },
   "5": { tag: "clothing",        label: "Clothing & Apparel",          transaction_type: "outflow", emoji: "5️⃣" },
-  "6": { tag: "investment",      label: "Savings & Investments",       transaction_type: "outflow", emoji: "6️⃣" },
-  "7": { tag: "family_gifting",  label: "Family & Gifting",            transaction_type: "outflow", emoji: "7️⃣" },
+  "6": { tag: "family_gifting",  label: "Family & Gifting",            transaction_type: "outflow", emoji: "6️⃣" },
+  "7": { tag: "salary_income",   label: "Salary / Income",             transaction_type: "inflow",  emoji: "7️⃣" },
+  "8": { tag: "gifts_received",  label: "Gifts Received",              transaction_type: "inflow",  emoji: "8️⃣" },
+  "9": { tag: "investment",      label: "Savings & Investments",       transaction_type: "outflow", emoji: "9️⃣" },
 };
 
 // ── HTTP handler ──────────────────────────────────────────────────────────────
@@ -2111,11 +2118,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
         return twimlMessage(`⚠️ Please reply with a number between 1 and ${maxDigit}.`);
       }
 
-      // Option 6 (investment) on personal: if the original entry was an inflow
+      // Option 9 (investment) on personal: if the original entry was an inflow
       // (liquidation / savings payout), preserve that direction rather than
       // overriding to outflow (deposit). All other tags use the taxonomy default.
       const resolvedType: TransactionType =
-        digit === "6" && isPersonal && lastTx.transaction_type === "inflow"
+        digit === "9" && isPersonal && lastTx.transaction_type === "inflow"
           ? "inflow"
           : tagChoice.transaction_type;
 
